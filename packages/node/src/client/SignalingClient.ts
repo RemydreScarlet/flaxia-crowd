@@ -3,16 +3,7 @@ import { hasConsent, saveConsent } from '../consent/storage';
 import { WebRTCPeer } from './WebRTCPeer';
 import { WorkerPool } from '../executor/WorkerPool';
 
-export interface NodeConfig {
-  orchestratorUrl: string;
-  siteId: string;
-  consent: {
-    brandName: string;
-    position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-    accentColor?: string;
-  };
-  maxCpuLoad?: number;
-}
+import type { NodeConfig } from '@flaxia/sdk';
 
 const startNode = (config: NodeConfig) => {
   console.log('Consent granted, connecting to signaling...');

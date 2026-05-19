@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import type { Env } from '../index'
-import type { TaskRecord, WorkloadType } from '../worker/TaskQueue'
+import type { TaskRecord, WorkloadType } from '@flaxia/sdk'
 
 const app = new Hono<{ Bindings: Env }>()
 

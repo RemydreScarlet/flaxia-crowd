@@ -9,7 +9,7 @@ describe('SignalingClient', () => {
 
   it('should attempt to connect to the correct signaling URL after consent', () => {
     const MockWebSocket = vi.fn();
-    global.WebSocket = MockWebSocket as any;
+    globalThis.WebSocket = MockWebSocket as any;
 
     initFlaxiaNode({
       orchestratorUrl: 'https://flaxia.app',

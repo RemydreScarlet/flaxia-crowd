@@ -1,24 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../index";
 
-export type TaskStatus = 'pending' | 'assigning' | 'processing' | 'done' | 'failed';
-export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert';
-
-export interface TaskRecord {
-  id: string;
-  status: TaskStatus;
-  workload: WorkloadType;
-  payload: unknown;
-  createdAt: number;
-  assignedAt?: number;
-  completedAt?: number;
-  assignedNodeId?: string;
-  retryCount: number;
-  timeoutMs: number;
-  callbackUrl?: string;
-  result?: unknown;
-  error?: string;
-}
+import type { TaskRecord } from "@flaxia/sdk";
 
 export class TaskQueue extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
