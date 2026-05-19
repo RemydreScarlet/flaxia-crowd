@@ -1,4 +1,5 @@
-// Simple WebWorker wrapper for task execution
+import type { WorkloadType } from "@flaxia/sdk";
+
 export class WorkerPool {
   private worker: Worker | null = null;
 
@@ -7,30 +8,50 @@ export class WorkerPool {
   }
 
   private initWorker() {
-    if (typeof Worker === 'undefined') return; // Mock for test environment
-    const code = `
-      self.onmessage = (e) => {
-        const { taskId, payload } = e.data;
-        console.log('Worker processing:', taskId);
-        self.postMessage({ taskId, result: 'processed: ' + JSON.stringify(payload) });
-      };
-    `;
-    const blob = new Blob([code], { type: 'application/javascript' });
-    this.worker = new Worker(URL.createObjectURL(blob));
+    if (typeof Worker === 'undefined') return;
+    
+    // In Vite, this URL will be resolved correctly
+    this.worker = new Worker(new URL('../worker/main.worker.ts', import.meta.url), {
+      type: 'module'
+    });
   }
 
-  execute(taskId: string, payload: any, callback: (result: any) => void) {
-    if (!this.worker) {
-        // Mock result for test environment
-        callback('processed: ' + JSON.stringify(payload));
+  run(id: string, workload: WorkloadType, payload: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.worker) {
+        // Fallback for non-worker environments (tests)
+        resolve({ output: 'Mock result (no worker)' });
         return;
-    }
-    
-    this.worker.onmessage = (e) => {
-      if (e.data.taskId === taskId) {
-        callback(e.data.result);
       }
-    };
-    this.worker.postMessage({ taskId, payload });
+
+      const timeoutMs = 30000;
+      const timeoutId = setTimeout(() => {
+        this.terminate();
+        this.initWorker();
+        reject(new Error('TIMEOUT'));
+      }, timeoutMs);
+
+      this.worker.onmessage = (e: MessageEvent) => {
+        const { id: resId, type, result, error } = e.data;
+        if (resId !== id) return;
+
+        if (type === 'done') {
+          clearTimeout(timeoutId);
+          resolve(result);
+        } else if (type === 'error') {
+          clearTimeout(timeoutId);
+          reject(new Error(error));
+        }
+      };
+
+      this.worker.postMessage({ id, workload, payload });
+    });
+  }
+
+  terminate() {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
   }
 }
