@@ -1,18 +1,27 @@
+interface ConsentConfig {
+  brandName: string;
+  position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  accentColor?: string;
+}
+
 export class ConsentUI {
   private shadow: ShadowRoot;
 
-  constructor(container: HTMLElement, onConsent: () => void) {
+  constructor(container: HTMLElement, config: ConsentConfig, onConsent: () => void) {
     this.shadow = container.attachShadow({ mode: 'open' });
-    this.render(onConsent);
+    this.render(config, onConsent);
   }
 
-  private render(onConsent: () => void) {
+  private render(config: ConsentConfig, onConsent: () => void) {
+    const { brandName, position, accentColor = '#6366f1' } = config;
+    const [y, x] = position.split('-');
+
     const style = document.createElement('style');
     style.textContent = `
       .overlay {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
+        ${y}: 20px;
+        ${x}: 20px;
         padding: 20px;
         background: #fff;
         border: 1px solid #ccc;
@@ -23,21 +32,22 @@ export class ConsentUI {
         font-family: sans-serif;
       }
       button {
-        background: #6366f1;
+        background: ${accentColor};
         color: white;
         border: none;
         padding: 10px 15px;
         border-radius: 4px;
         cursor: pointer;
         margin-top: 10px;
+        width: 100%;
       }
     `;
 
     const div = document.createElement('div');
     div.className = 'overlay';
     div.innerHTML = `
-      <h3>Flaxia Node</h3>
-      <p>このサイトのパフォーマンス向上にご協力ください。</p>
+      <h3>${brandName}</h3>
+      <p>サイトのパフォーマンス向上にご協力ください。</p>
       <button id="consent-btn">同意して開始</button>
     `;
 

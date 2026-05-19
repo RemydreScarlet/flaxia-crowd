@@ -1,17 +1,25 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { initFlaxiaNode } from '../SignalingClient';
 
 describe('SignalingClient', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    localStorage.clear();
+  });
+
   it('should attempt to connect to the correct signaling URL after consent', () => {
-    // スパイとして定義
     const MockWebSocket = vi.fn();
     global.WebSocket = MockWebSocket as any;
 
-    initFlaxiaNode({ orchestratorUrl: 'https://flaxia.app' });
+    initFlaxiaNode({
+      orchestratorUrl: 'https://flaxia.app',
+      siteId: 'test-site',
+      consent: {
+        brandName: 'Test Brand',
+        position: 'bottom-right',
+      },
+    });
 
-    // 同意ボタンをクリック
-    const btn = document.querySelector('body')?.shadowRoot?.querySelector('#consent-btn') as HTMLButtonElement;
-    // Note: Shadow DOM の構造に注意する必要がある
     const overlay = document.body.firstElementChild?.shadowRoot?.querySelector('#consent-btn') as HTMLButtonElement;
     overlay.click();
 
