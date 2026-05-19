@@ -1,0 +1,12 @@
+{
+  "name": "flaxia-crowd",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:worker": "npm run dev --workspace=packages/worker",
+    "dev:node": "npm run dev --workspace=packages/node"
+  }
+}
