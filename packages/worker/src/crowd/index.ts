@@ -1,27 +1,27 @@
 import { Hono } from 'hono'
-import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import type { Env } from '../index'
 import type { TaskRecord, WorkloadType } from '@flaxia/sdk'
 
 const app = new Hono<{ Bindings: Env }>()
 
-// Signaling
-app.get(
-  '/signal',
-  upgradeWebSocket((c) => {
-    return {
-      onOpen: (_event, ws) => {
-        console.log('Connection opened')
-        ws.send(JSON.stringify({ type: 'hello', nodeId: 'node-1' }))
-      },
-      onMessage: (event, ws) => {
-        const data = JSON.parse(event.data as string)
-        console.log('Received message:', data)
-      },
-      onClose: () => console.log('Connection closed'),
-    }
-  })
-)
+// Signaling - Upgrading to NodeManager Durable Object
+app.get('/signal', async (c) => {
+  const upgradeHeader = c.req.header('Upgrade')
+  if (!upgradeHeader || upgradeHeader !== 'websocket') {
+    return c.text('Expected Upgrade: websocket', 426)
+  }
+
+  const nodeId = c.req.query('nodeId') || crypto.randomUUID()
+  const capabilities = c.req.query('capabilities') || ''
+
+  const id = c.env.NODE_MANAGER.idFromName('global-manager')
+  const obj = c.env.NODE_MANAGER.get(id)
+
+  return obj.fetch(new Request(`${c.req.url}?nodeId=${nodeId}&capabilities=${capabilities}`, {
+    headers: c.req.raw.headers,
+    signal: c.req.raw.signal,
+  }))
+})
 
 // Tasks
 app.post('/tasks', async (c) => {
@@ -58,17 +58,26 @@ app.get('/tasks/:id', async (c) => {
 
 app.post('/tasks/:id/result', async (c) => {
   const id = c.req.param('id')
-  const body = await c.req.json()
-  console.log(`Result for ${id}:`, body)
+  const { result, nodeId } = await c.req.json()
+  
+  const doId = c.env.TASK_QUEUE.idFromName('global-queue')
+  const obj = c.env.TASK_QUEUE.get(doId)
+  
+  await obj.fetch(new Request(`http://internal/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ taskId: id, result, nodeId })
+  }))
+
   return c.json({ id, message: 'Result posted' })
 })
 
 // Nodes
-app.get('/nodes', (c) => c.json({ nodes: [] }))
-app.post('/nodes/register', async (c) => {
-  const body = await c.req.json()
-  console.log('Node registered:', body)
-  return c.json({ message: 'Node registered' })
+app.get('/nodes', async (c) => {
+  const id = c.env.NODE_MANAGER.idFromName('global-manager')
+  const obj = c.env.NODE_MANAGER.get(id)
+  
+  // We can add a method to get all nodes if needed
+  return c.json({ nodes: [] })
 })
 
 export { app as crowdApp }

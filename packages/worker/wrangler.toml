@@ -9,6 +9,10 @@ ENVIRONMENT = "development"
 name = "TASK_QUEUE"
 class_name = "TaskQueue"
 
+[[durable_objects.bindings]]
+name = "NODE_MANAGER"
+class_name = "NodeManager"
+
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["TaskQueue"]
+new_sqlite_classes = ["TaskQueue", "NodeManager"]
