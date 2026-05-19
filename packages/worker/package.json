@@ -5,13 +5,17 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "wrangler dev src/index.ts",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest"
   },
   "dependencies": {
     "hono": "^4.12.19"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.6.16",
     "typescript": "^6.0.3",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.113.0"
   }
 }
