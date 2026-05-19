@@ -1,0 +1,16 @@
+{
+  "name": "@flaxia/node",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}
