@@ -14,6 +14,10 @@ self.onmessage = async (e: MessageEvent) => {
         const { handleImageProcess } = await import('../workloads/image-process');
         result = await handleImageProcess(payload);
         break;
+      case 'container':
+        const { handleContainer } = await import('../workloads/container');
+        result = await handleContainer(payload);
+        break;
       default:
         throw new Error(`Unknown workload type: ${workload}`);
     }

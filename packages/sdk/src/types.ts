@@ -4,7 +4,7 @@
 
 export type TaskStatus = 'pending' | 'assigning' | 'processing' | 'done' | 'failed';
 
-export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert';
+export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container';
 
 // --- AI Inference ---
 
@@ -58,9 +58,33 @@ export interface FileConvertPayload {
   options?: Record<string, unknown>;
 }
 
+// --- Linux Container (container2wasm) ---
+
+export interface ContainerPayload {
+  /** Name of the WASM image to load (e.g. 'alpine-magick.wasm') */
+  image: string;
+  /** Command and arguments to run (e.g. ['magick', 'input.jpg', '-resize', '50%', 'output.jpg']) */
+  command: string[];
+  /** Input files to mount into the container (Map of filename -> base64 content) */
+  files: Record<string, string>;
+  /** Optional memory limit for the WASM runtime (in MB) */
+  memoryLimitMb?: number;
+}
+
+export interface ContainerResult {
+  /** Output files from the container (Map of filename -> base64 content) */
+  files: Record<string, string>;
+  /** Standard output from the command */
+  stdout: string;
+  /** Standard error from the command */
+  stderr: string;
+  /** Exit code of the process */
+  exitCode: number;
+}
+
 // --- Core Task Types ---
 
-export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | unknown;
+export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | unknown;
 
 export interface TaskRecord {
   id: string;

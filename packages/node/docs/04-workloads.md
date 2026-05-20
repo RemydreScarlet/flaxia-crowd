@@ -4,86 +4,57 @@
 
 | workload | 実装方式 | 難易度 | 優先度 |
 |----------|---------|--------|--------|
-| `ai-inference` | Transformer.js | 低 | 最高 |
+| `ai-inference` | Transformer.js v4 | 低 | 最高 |
 | `image-process` | OffscreenCanvas | 低 | 高 |
+| `container` | container2wasm | 中 | 中 |
 | `file-convert` | WASM (予定) | 高 | Phase 2 |
 
 ---
 
 ## ai-inference（Transformer.js）
 
-```typescript
-// src/workloads/ai-inference.ts
-
-import type { AiInferencePayload, AiInferenceResult } from '../types'
-
-export async function runAiInference(payload: AiInferencePayload): Promise<AiInferenceResult> {
-  // Transformer.jsを動的import（同意後のみロード）
-  const { pipeline } = await import('@xenova/transformers')
-
-  const pipe = await pipeline(payload.task, payload.model)
-  const result = await pipe(payload.input, payload.options ?? {})
-
-  return { output: result }
-}
-
-type AiInferencePayload = {
-  task: string      // 'text-classification' | 'translation' | 'summarization' | ...
-  model: string     // HuggingFaceモデル名 例: 'Xenova/distilbert-base-uncased-finetuned-sst-2-english'
-  input: string | string[]
-  options?: Record<string, unknown>
-}
-```
-
-**注意点:**
-- モデルのダウンロードは初回のみ（Transformer.jsがキャッシュする）
-- 大きなモデル（>500MB）は受け付けない制限を入れる
-- WebGPUが使える場合は自動で使う（Transformer.jsが処理する）
+Transformer.js v4 を使用し、WebWorker 内で推論を行う。WebGPU が利用可能な場合は自動的に適用される。
 
 ---
 
 ## image-process（OffscreenCanvas）
 
+ブラウザ標準の `OffscreenCanvas` を使用して、メインスレッドをブロックせずに高速な画像処理を行う。
+リサイズ、グレースケール変換、圧縮などをサポート。
+
 ```typescript
 // src/workloads/image-process.ts
-
-type ImageProcessPayload = {
-  operation: 'resize' | 'grayscale' | 'compress' | 'thumbnail'
-  imageData: ArrayBuffer   // 画像バイナリ
-  options: {
-    width?: number
-    height?: number
-    quality?: number       // 0.0 - 1.0
-    format?: 'jpeg' | 'png' | 'webp'
-  }
+export async function handleImageProcess(payload: ImageProcessPayload): Promise<ImageProcessResult> {
+  // OffscreenCanvas + createImageBitmap による高速処理
 }
 ```
 
-WebWorker内では `OffscreenCanvas` + `createImageBitmap` で処理する。
-DOMが使えないWorker内でも動作する。
-
 ---
 
-## file-convert（Phase 2）
+## container（container2wasm / Linux Container）
 
-Phase 1では実装しない。
+Linux コンテナを WASM 上で実行する汎用ワークロード。`container2wasm` を用いて RISC-V 等のエミュレーションを行う。
 
-将来的には以下を検討：
-- PDF → テキスト抽出（pdf.js WASM）
-- 動画トランスコード（FFmpeg WASM）※非常に重いため要検討
-- Markdown → HTML
+```typescript
+// src/workloads/container.ts
+import { runContainer } from '../executor/container-executor'
 
-container2wasmについては処理速度・バンドルサイズの問題があるため、
-軽量WASMライブラリを個別に採用する方針とする。
+export async function handleContainer(payload: ContainerPayload): Promise<ContainerResult> {
+  // 指定された WASM イメージ上でコマンドを実行
+  return await runContainer(payload)
+}
+```
+
+**特徴:**
+- 既存の Linux ツールをそのまま利用可能（ImageMagick, libvips, ffmpeg等）
+- 処理速度はネイティブ WASM に劣るが、柔軟性が極めて高い
+- カーネルレベルでの強力なサンドボックス化
 
 ---
 
 ## ワークロード追加時のルール
 
-新しいワークロードを追加する際は：
-
-1. `src/workloads/` に実装ファイルを追加
-2. `src/worker/main.worker.ts` のdispatchに追加
-3. `WorkloadType` 型に追加
-4. `GEMINI.md` のcapabilities一覧を更新
-5. `@flaxia/sdk` の型定義も合わせて更新
+1. `packages/sdk/src/types.ts` にペイロードと結果の型を定義
+2. `packages/node/src/workloads/` に実装ファイルを追加
+3. `packages/node/src/worker/main.worker.ts` の dispatch に追加
+4. `WorkloadType` 型（SDK）を更新
