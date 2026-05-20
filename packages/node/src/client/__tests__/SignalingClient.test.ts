@@ -23,6 +23,7 @@ describe('SignalingClient', () => {
     const overlay = document.body.firstElementChild?.shadowRoot?.querySelector('#consent-btn') as HTMLButtonElement;
     overlay.click();
 
-    expect(MockWebSocket).toHaveBeenCalledWith('wss://flaxia.app/crowd/signal');
+    expect(MockWebSocket).toHaveBeenCalledWith(expect.stringContaining('wss://flaxia.app/crowd/signal?nodeId='));
+    expect(MockWebSocket).toHaveBeenCalledWith(expect.stringContaining('capabilities=ai-inference%2Cimage-process'));
   });
 });

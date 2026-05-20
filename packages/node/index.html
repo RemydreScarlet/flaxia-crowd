@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flaxia Node Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #121212; color: #eee; }
+        #status { padding: 10px; border-radius: 4px; margin-bottom: 20px; }
+        .connected { background: #1b5e20; }
+        .disconnected { background: #b71c1c; }
+        pre { background: #1e1e1e; padding: 10px; overflow: auto; max-height: 400px; }
+    </style>
+</head>
+<body>
+    <h1>Flaxia Node Test</h1>
+    <div id="status" class="disconnected">Disconnected</div>
+    <h3>Logs:</h3>
+    <pre id="logs"></pre>
+
+    <script type="module">
+        import { initFlaxiaNode } from './src/index.ts';
+
+        const logs = document.getElementById('logs');
+        const status = document.getElementById('status');
+
+        // Monkey patch console.log to show in the page
+        const originalLog = console.log;
+        console.log = (...args) => {
+            originalLog(...args);
+            const line = document.createElement('div');
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${args.join(' ')}`;
+            logs.appendChild(line);
+            logs.scrollTop = logs.scrollHeight;
+
+            if (args[0].includes('Connected to Flaxia Orchestrator')) {
+                status.textContent = 'Connected';
+                status.className = 'connected';
+            }
+        };
+
+        initFlaxiaNode({
+            orchestratorUrl: 'http://localhost:8787',
+            siteId: 'test-node-local',
+            consent: {
+                brandName: 'Flaxia Test Node',
+                position: 'bottom-right'
+            }
+        });
+    </script>
+</body>
+</html>
