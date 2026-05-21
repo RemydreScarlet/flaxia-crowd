@@ -82,7 +82,7 @@ packages/node/
 import { initFlaxiaNode } from '@flaxia/node'
 
 initFlaxiaNode({
-  orchestratorUrl: 'https://flaxia.app',
+  orchestratorUrl: 'https://crowd.flaxia.app',
   siteId: 'your-site-id',
   consent: {
     brandName: 'あなたのサービス名',

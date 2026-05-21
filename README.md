@@ -18,53 +18,27 @@
 
 ---
 
-## パッケージ構成
+## ディレクトリ構成
 
-- `@flaxia/sdk`: タスク投入・結果取得用。
-- `@flaxia/node`: ブラウザノード提供用SDK。
-- `@flaxia/worker`: Cloudflare Workersベースのオーケストレーター。
+```text
+flaxia-crowd/
+├── packages/
+│   ├── worker/    # Cloudflare Workers オーケストレーター (TaskQueue, Signaling)
+│   ├── node/      # ブラウザノードSDK (ConsentUI, WebRTC, WorkerPool)
+│   └── sdk/       # 依頼者用SDK (Task Submission, Types)
+```
 
 ---
 
-## クイックスタート
+## How to use
 
-### 依頼者
+詳細な利用方法や各コンポーネントの仕様は `docs/` ディレクトリを参照してください。
 
-```bash
-npm install @flaxia/sdk
-```
+- [導入ガイド (Getting Started)](docs/getting-started.md)
+- [依頼者向けSDKガイド](docs/sdk-guide.md)
+- [ノード提供者向けガイド](docs/node-guide.md)
+- [ワーカーオーケストレーターガイド](docs/worker-guide.md)
 
-```typescript
-import { FlaxiaClient } from '@flaxia/sdk'
-
-const client = new FlaxiaClient({ apiKey: '...' })
-
-// タスク実行
-const result = await client.submit({
-  workload: 'ai-inference',
-  payload: {
-    task: 'text-classification',
-    input: 'This product is amazing!',
-  },
-})
-```
-
-### サイトオーナー
-
-```bash
-npm install @flaxia/node
-```
-
-```typescript
-import { initFlaxiaNode } from '@flaxia/node'
-
-initFlaxiaNode({
-  orchestratorUrl: 'https://flaxia.app',
-  siteId: '...',
-  consent: { brandName: 'YourService', position: 'bottom-right' },
-})
-```
-*ノード提供により、利用料が最大70%割引されます。*
 
 ---
 
@@ -78,37 +52,28 @@ initFlaxiaNode({
 
 ---
 
-## 対応ワークロード
+## 開発・貢献ワークフロー
 
-| workload | 内容 | 実装 |
-|----------|------|------|
-| `ai-inference` | テキスト分類・要約等 | Transformer.js |
-| `image-process` | リサイズ・圧縮等 | OffscreenCanvas |
+### 事前準備
+- Node.js v22+
+- npm v10+
 
-*将来的にファイル変換等のワークロード追加を予定。*
-
----
-
-## アーキテクチャ
-
-1. **依頼者** (`@flaxia/sdk`) がタスクを送信。
-2. **オーケストレーター** (`@flaxia/worker`) がWebSocket Signalingでノードへタスクを配布。
-3. **ノード群** (`@flaxia/node`) がWebRTC DataChannelで処理結果を返却。
-
-タスクは冗長配布され、タイムアウト時は自動再キューイングされます。
-
----
-
-## 開発
-
-### ローカル起動
-
+### 環境構築とテスト
 ```bash
 git clone https://github.com/flaxia/flaxia-crowd
 cd flaxia-crowd
 npm install
-npm run dev:worker
+npm run build     # 全パッケージのビルド
+npm run test      # 全パッケージのテスト
 ```
+
+### 開発方針
+1. `packages/worker` (基盤): オーケストレーター機能。
+2. `packages/node` (ノード): ブラウザ実行環境。
+3. `packages/sdk` (インターフェース): 依頼者向けAPI。
+
+機能追加・修正は必ず `tests` を含め、既存の `GEMINI.md` に記載された各パッケージのルールに従ってください。
+型定義を変更した場合は必ず3パッケージ同時に整合性を取ってください。
 
 ---
 

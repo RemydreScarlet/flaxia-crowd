@@ -11,7 +11,7 @@
 type FlaxiaClientConfig = {
   /** Flaxia CrowdダッシュボードのAPIキー */
   apiKey: string
-  /** オーケストレーターURL デフォルト: 'https://flaxia.app' */
+  /** オーケストレーターURL デフォルト: 'https://crowd.flaxia.app' */
   orchestratorUrl?: string
   /** HTTPリクエストのタイムアウト ms デフォルト: 30000 */
   requestTimeoutMs?: number
