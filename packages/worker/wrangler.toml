@@ -14,5 +14,5 @@ name = "NODE_MANAGER"
 class_name = "NodeManager"
 
 [[migrations]]
-tag = "v1"
+tag = "v3"
 new_sqlite_classes = ["TaskQueue", "NodeManager"]
