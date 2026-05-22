@@ -108,6 +108,9 @@ export class TaskQueue extends DurableObject<Env> {
     console.log(`Task ${taskId} completed by ${nodeId}`);
 
     // If there's a callback URL, we should trigger it (Phase 2)
+
+    // Try to assign the next pending task
+    await this.tryAssignAll();
   }
 
   async alarm(): Promise<void> {

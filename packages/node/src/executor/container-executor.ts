@@ -25,12 +25,12 @@ export const runContainer = async (payload: ContainerPayload): Promise<Container
     }
   };
 
-  const rootFiles: Record<string, File | Directory> = {};
+  const rootFiles = new Map<string, any>();
   
   // Map input files
   for (const [path, base64] of Object.entries(files)) {
     const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-    rootFiles[path] = new File(binary);
+    rootFiles.set(path, new File(binary));
   }
 
   const rootDir = new PreopenDirectory("/", rootFiles);

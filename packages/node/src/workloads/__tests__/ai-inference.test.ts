@@ -20,6 +20,7 @@ describe('AI Inference Workload', () => {
     const result = await handleAiInference(payload);
     
     expect(result.output).toBeDefined();
-    expect(result.output[0].label).toBe('POSITIVE');
+    const output = result.output as any;
+    expect(output[0].label).toBe('POSITIVE');
   });
 });

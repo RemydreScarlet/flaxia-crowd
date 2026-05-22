@@ -10,8 +10,8 @@ export class WorkerPool {
   private initWorker() {
     if (typeof Worker === 'undefined') return;
     
-    // In Vite, this URL will be resolved correctly
-    this.worker = new Worker(new URL('../worker/main.worker.ts', import.meta.url), {
+    const workerUrl = new URL('./worker.js', import.meta.url);
+    this.worker = new Worker(workerUrl, {
       type: 'module'
     });
   }

@@ -21,7 +21,7 @@ export class NodeManager extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/ws") {
+    if (url.pathname === "/ws" || url.pathname === "/crowd/signal") {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
@@ -70,6 +70,11 @@ export class NodeManager extends DurableObject<Env> {
     }
 
     console.log(`Node registered: ${nodeId} with capabilities: ${capabilities}`);
+
+    // Notify TaskQueue that a node is available
+    const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
+    const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
+    taskQueue.fetch(new Request("http://internal/assign-next")).catch(e => console.error(e));
   }
 
   async getIdleNodes(): Promise<string[]> {

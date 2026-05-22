@@ -17,7 +17,10 @@ app.get('/signal', async (c) => {
   const id = c.env.NODE_MANAGER.idFromName('global-manager')
   const obj = c.env.NODE_MANAGER.get(id)
 
-  return obj.fetch(new Request(`${c.req.url}?nodeId=${nodeId}&capabilities=${capabilities}`, {
+  const url = new URL(c.req.url)
+  url.pathname = '/ws'
+
+  return obj.fetch(new Request(`${url.toString()}?nodeId=${nodeId}&capabilities=${capabilities}`, {
     headers: c.req.raw.headers,
     signal: c.req.raw.signal,
   }))

@@ -4,7 +4,9 @@ import { handleImageProcess } from '../image-process';
 // Mock OffscreenCanvas and related APIs if not available in environment
 if (typeof OffscreenCanvas === 'undefined') {
   global.OffscreenCanvas = class {
-    constructor(width, height) {
+    width: number;
+    height: number;
+    constructor(width: number, height: number) {
       this.width = width;
       this.height = height;
     }
