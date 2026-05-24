@@ -18,8 +18,10 @@ app.get('/signal', async (c) => {
 
   const url = new URL(c.req.url)
   url.pathname = '/ws'
+  url.searchParams.set('nodeId', nodeId)
+  url.searchParams.set('capabilities', capabilities)
 
-  return obj.fetch(new Request(`${url.toString()}?nodeId=${nodeId}&capabilities=${capabilities}`, {
+  return obj.fetch(new Request(url.toString(), {
     headers: c.req.raw.headers,
     signal: c.req.raw.signal,
   }))

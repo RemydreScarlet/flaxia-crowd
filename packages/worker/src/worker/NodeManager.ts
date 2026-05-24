@@ -62,7 +62,11 @@ export class NodeManager extends DurableObject<Env> {
   }
 
   async registerNode(ws: WebSocket, nodeId: string, capabilities: WorkloadType[]) {
+    console.log(`[NodeManager] registerNode: ${nodeId}`, { capabilities });
     this.ctx.acceptWebSocket(ws, [nodeId]);
+
+    console.log(`[NodeManager] WebSockets after accept:`, this.ctx.getWebSockets().length);
+    console.log(`[NodeManager] WebSockets tagged ${nodeId}:`, this.ctx.getWebSockets(nodeId).length);
 
     const node: NodeRecord = {
       id: nodeId,
@@ -80,10 +84,15 @@ export class NodeManager extends DurableObject<Env> {
       idleNodes.push(nodeId);
       await this.ctx.storage.put("nodes:idle", idleNodes);
     }
+    console.log(`[NodeManager] idle list after register:`, idleNodes);
 
     const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
     const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
-    taskQueue.fetch(new Request("http://internal/assign-next")).catch(() => {});
+    try {
+      await taskQueue.fetch(new Request("http://internal/assign-next"));
+    } catch {
+      // TaskQueue might not be ready yet; alarm will retry
+    }
   }
 
   async getIdleNodes(): Promise<string[]> {
@@ -108,26 +117,34 @@ export class NodeManager extends DurableObject<Env> {
 
   async pickNode(workload: WorkloadType): Promise<string | undefined> {
     const idleNodeIds = await this.getIdleNodes();
-    if (idleNodeIds.length === 0) return undefined;
+    console.log(`[NodeManager] pickNode idle list:`, idleNodeIds);
+    if (idleNodeIds.length === 0) {
+      console.log(`[NodeManager] pickNode: no idle nodes`);
+      return undefined;
+    }
 
     const nodes = await Promise.all(
       idleNodeIds.map(id => this.ctx.storage.get<NodeRecord>(`node:${id}`))
     );
+    console.log(`[NodeManager] pickNode nodes from storage:`, nodes.map(n => n ? `${n.id} (${n.status}, caps=${n.capabilities})` : 'undefined'));
 
     const candidates = nodes
       .filter((n): n is NodeRecord =>
-        !!n &&
-        n.capabilities.includes(workload) &&
-        this.ctx.getWebSockets(n.id).length > 0
+        !!n && n.capabilities.includes(workload)
       )
       .sort((a, b) => a.cpuLoad - b.cpuLoad || a.connectedAt - b.connectedAt);
+
+    console.log(`[NodeManager] pickNode candidates for ${workload}:`, candidates.map(n => n.id));
+    console.log(`[NodeManager] pickNode WebSocket check - ${candidates[0]?.id}: ws=${candidates[0] ? this.ctx.getWebSockets(candidates[0].id).length : 'N/A'}`);
 
     return candidates[0]?.id;
   }
 
   async assignTask(nodeId: string, task: TaskRecord): Promise<void> {
+    console.log(`[NodeManager] assignTask: node=${nodeId}, task=${task.id}`);
     const ws = this.ctx.getWebSockets(nodeId)[0];
     if (!ws) throw new Error(`WebSocket for node ${nodeId} not found`);
+    console.log(`[NodeManager] assignTask: sending to ws...`);
 
     const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
     if (node) {
@@ -150,6 +167,7 @@ export class NodeManager extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const nodeId = this.ctx.getTags(ws)[0];
     const data: WsMessage = JSON.parse(message as string);
+    console.log(`[NodeManager] webSocketMessage: node=${nodeId}, type=${data.type}`);
 
     if (data.type === 'pong') {
       const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
@@ -214,6 +232,7 @@ export class NodeManager extends DurableObject<Env> {
 
   async webSocketClose(ws: WebSocket) {
     const nodeId = this.ctx.getTags(ws)[0];
+    console.log(`[NodeManager] webSocketClose: node=${nodeId}`);
     await this.unregisterNode(nodeId);
   }
 

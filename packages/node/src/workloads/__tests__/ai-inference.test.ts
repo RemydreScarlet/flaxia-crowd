@@ -20,8 +20,7 @@ describe('AI Inference Workload', () => {
 
     expect(result.output).toBeDefined();
     const output = result.output as any;
-    expect(output[0].generated_text).toContain('Dummy!');
-    expect(output[0].generated_text).toContain('I love this service!');
+    expect(output[0].generated_text).toBe('this is AI Response mocks');
   });
 
   it('should throw an error for unsupported tasks', async () => {

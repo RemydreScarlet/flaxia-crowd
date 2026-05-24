@@ -25,6 +25,6 @@ export const handleAiInference = async (payload: AiInferencePayload): Promise<Ai
   // Temporary bypass for model loading: return dummy response
   console.log(`[Dummy] Returning mock response for task: ${task}, model: ${model}`);
   return { 
-    output: [{ generated_text: `Dummy! Input was: ${input}` }] 
+    output: [{ generated_text: 'this is AI Response mocks' }] 
   };
 };

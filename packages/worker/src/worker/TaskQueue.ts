@@ -61,6 +61,7 @@ export class TaskQueue extends DurableObject<Env> {
 
   async tryAssignAll() {
     const pendingIds = await this.getPending();
+    console.log(`[TaskQueue] tryAssignAll: pending=${pendingIds.length}`);
     if (pendingIds.length === 0) return;
 
     const nodeManagerId = this.env.NODE_MANAGER.idFromName("global-manager");
@@ -70,11 +71,17 @@ export class TaskQueue extends DurableObject<Env> {
       const task = await this.getTask(taskId);
       if (!task || task.status !== 'pending') continue;
 
+      console.log(`[TaskQueue] picking node for task ${taskId} (workload=${task.workload})`);
       const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`));
+      const respBody = await nodeResponse.text();
+      console.log(`[TaskQueue] pick response: status=${nodeResponse.status}, body=${respBody}`);
       if (nodeResponse.status === 200) {
-        const { nodeId } = await nodeResponse.json() as { nodeId: string | null };
+        const { nodeId } = JSON.parse(respBody) as { nodeId: string | null };
         if (nodeId) {
+          console.log(`[TaskQueue] assigned task ${taskId} to node ${nodeId}`);
           await this.assignTask(task, nodeId);
+        } else {
+          console.log(`[TaskQueue] no node available for task ${taskId}`);
         }
       }
     }
@@ -125,7 +132,8 @@ export class TaskQueue extends DurableObject<Env> {
     const pending = await this.getPending();
     const processing = await this.getProcessing();
     if (pending.length > 0 || processing.length > 0) {
-      await this.ctx.storage.setAlarm(Date.now() + 10000);
+      const interval = pending.length > 0 ? 2000 : 10000;
+      await this.ctx.storage.setAlarm(Date.now() + interval);
     }
   }
 
