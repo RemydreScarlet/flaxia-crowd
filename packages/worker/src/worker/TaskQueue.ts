@@ -3,15 +3,18 @@ import type { Env } from "../index";
 import type { TaskRecord } from "@flaxia/sdk";
 
 export class TaskQueue extends DurableObject<Env> {
+  private cachePending: string[] | null = null;
+  private cacheProcessing: string[] | null = null;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
+
     if (url.pathname === "/complete") {
-      const { taskId, result, nodeId } = await request.json() as any;
+      const { taskId, result, nodeId } = await request.json() as { taskId: string; result: unknown; nodeId: string };
       await this.completeTask(taskId, result, nodeId);
       return new Response("OK");
     }
@@ -26,12 +29,12 @@ export class TaskQueue extends DurableObject<Env> {
 
   async enqueue(task: TaskRecord): Promise<void> {
     await this.ctx.storage.put(`task:${task.id}`, task);
-    
-    const pending = (await this.ctx.storage.get<string[]>("queue:pending")) || [];
+
+    const pending = await this.getPending();
     pending.push(task.id);
+    this.cachePending = pending;
     await this.ctx.storage.put("queue:pending", pending);
-    
-    await this.ctx.storage.setAlarm(Date.now() + 1000); // Try assigning soon
+
     await this.tryAssignAll();
   }
 
@@ -40,7 +43,20 @@ export class TaskQueue extends DurableObject<Env> {
   }
 
   async getPending(): Promise<string[]> {
-    return (await this.ctx.storage.get<string[]>("queue:pending")) || [];
+    if (this.cachePending) return this.cachePending;
+    this.cachePending = (await this.ctx.storage.get<string[]>("queue:pending")) || [];
+    return this.cachePending;
+  }
+
+  async getProcessing(): Promise<string[]> {
+    if (this.cacheProcessing) return this.cacheProcessing;
+    this.cacheProcessing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
+    return this.cacheProcessing;
+  }
+
+  private invalidateCache() {
+    this.cachePending = null;
+    this.cacheProcessing = null;
   }
 
   async tryAssignAll() {
@@ -54,11 +70,9 @@ export class TaskQueue extends DurableObject<Env> {
       const task = await this.getTask(taskId);
       if (!task || task.status !== 'pending') continue;
 
-      // Ask NodeManager for a node
-      // We'll use a simplified internal RPC-like call via fetch
       const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`));
       if (nodeResponse.status === 200) {
-        const { nodeId } = await nodeResponse.json() as any;
+        const { nodeId } = await nodeResponse.json() as { nodeId: string | null };
         if (nodeId) {
           await this.assignTask(task, nodeId);
         }
@@ -72,27 +86,24 @@ export class TaskQueue extends DurableObject<Env> {
     task.assignedAt = Date.now();
     await this.ctx.storage.put(`task:${task.id}`, task);
 
-    // Update pending queue
     const pending = await this.getPending();
-    await this.ctx.storage.put("queue:pending", pending.filter(id => id !== task.id));
+    this.cachePending = pending.filter(id => id !== task.id);
+    await this.ctx.storage.put("queue:pending", this.cachePending);
 
-    // Update processing queue
-    const processing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
-    processing.push(task.id);
-    await this.ctx.storage.put("queue:processing", processing);
+    const processing = await this.getProcessing();
+    this.cacheProcessing = processing;
+    this.cacheProcessing.push(task.id);
+    await this.ctx.storage.put("queue:processing", this.cacheProcessing);
 
-    // Tell NodeManager to actually send the task
     const nodeManagerId = this.env.NODE_MANAGER.idFromName("global-manager");
     const nodeManager = this.env.NODE_MANAGER.get(nodeManagerId);
     await nodeManager.fetch(new Request("http://internal/assign", {
       method: "POST",
       body: JSON.stringify({ nodeId, task })
     }));
-
-    console.log(`Task ${task.id} assigned to ${nodeId}`);
   }
 
-  private async completeTask(taskId: string, result: any, nodeId: string) {
+  private async completeTask(taskId: string, result: unknown, nodeId: string) {
     const task = await this.getTask(taskId);
     if (!task) return;
 
@@ -101,65 +112,59 @@ export class TaskQueue extends DurableObject<Env> {
     task.completedAt = Date.now();
     await this.ctx.storage.put(`task:${task.id}`, task);
 
-    // Update processing queue
-    const processing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
-    await this.ctx.storage.put("queue:processing", processing.filter(id => id !== taskId));
+    const processing = await this.getProcessing();
+    this.cacheProcessing = processing.filter(id => id !== taskId);
+    await this.ctx.storage.put("queue:processing", this.cacheProcessing);
 
-    console.log(`Task ${taskId} completed by ${nodeId}`);
-
-    // If there's a callback URL, we should trigger it (Phase 2)
-
-    // Try to assign the next pending task
     await this.tryAssignAll();
   }
 
   async alarm(): Promise<void> {
     await this.checkTimeouts();
-    
-    // Set next alarm if there are pending or processing tasks
+
     const pending = await this.getPending();
-    const processing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
+    const processing = await this.getProcessing();
     if (pending.length > 0 || processing.length > 0) {
       await this.ctx.storage.setAlarm(Date.now() + 10000);
     }
   }
 
   private async checkTimeouts(): Promise<void> {
-    const processingIds = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
+    const processingIds = await this.getProcessing();
     const now = Date.now();
 
     for (const taskId of processingIds) {
       const task = await this.getTask(taskId);
       if (task && task.assignedAt && now - task.assignedAt > task.timeoutMs) {
-        console.log(`Task ${taskId} timed out. Re-queueing...`);
-        
-        task.status = 'pending';
         task.retryCount++;
-        delete task.assignedNodeId;
-        delete task.assignedAt;
 
         if (task.retryCount >= 3) {
           task.status = 'failed';
           task.error = 'Max retries exceeded';
           await this.ctx.storage.put(`task:${task.id}`, task);
-          
-          // Remove from processing
-          const processing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
-          await this.ctx.storage.put("queue:processing", processing.filter(id => id !== taskId));
+
+          const processing = await this.getProcessing();
+          this.cacheProcessing = processing.filter(id => id !== taskId);
+          await this.ctx.storage.put("queue:processing", this.cacheProcessing);
         } else {
+          task.status = 'pending';
+          delete task.assignedNodeId;
+          delete task.assignedAt;
           await this.ctx.storage.put(`task:${task.id}`, task);
-          
-          // Move from processing to pending
-          const processing = (await this.ctx.storage.get<string[]>("queue:processing")) || [];
-          await this.ctx.storage.put("queue:processing", processing.filter(id => id !== taskId));
-          
+
+          const processing = await this.getProcessing();
+          this.cacheProcessing = processing.filter(id => id !== taskId);
+          await this.ctx.storage.put("queue:processing", this.cacheProcessing);
+
           const pending = await this.getPending();
-          pending.push(taskId);
-          await this.ctx.storage.put("queue:pending", pending);
+          this.cachePending = pending;
+          this.cachePending.push(taskId);
+          await this.ctx.storage.put("queue:pending", this.cachePending);
         }
       }
     }
-    
+
+    this.invalidateCache();
     await this.tryAssignAll();
   }
 }

@@ -2,50 +2,56 @@ import type { WorkloadType } from "@flaxia/sdk";
 
 export class WorkerPool {
   private worker: Worker | null = null;
+  private defaultTimeoutMs: number;
 
-  constructor() {
+  constructor(timeoutMs = 30000) {
+    this.defaultTimeoutMs = timeoutMs;
     this.initWorker();
   }
 
   private initWorker() {
     if (typeof Worker === 'undefined') return;
-    
-    const workerUrl = new URL('./worker.js', import.meta.url);
-    this.worker = new Worker(workerUrl, {
-      type: 'module'
-    });
+    this.worker = new Worker('/worker.js', { type: 'module' });
   }
 
-  run(id: string, workload: WorkloadType, payload: any): Promise<any> {
+  run(id: string, workload: WorkloadType, payload: unknown, timeoutMs?: number): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
-        // Fallback for non-worker environments (tests)
-        resolve({ output: 'Mock result (no worker)' });
+        reject(new Error('Worker not available'));
         return;
       }
 
-      const timeoutMs = 30000;
+      const timeout = timeoutMs ?? this.defaultTimeoutMs;
       const timeoutId = setTimeout(() => {
-        this.terminate();
-        this.initWorker();
+        this.cleanupWorker();
         reject(new Error('TIMEOUT'));
       }, timeoutMs);
 
-      this.worker.onmessage = (e: MessageEvent) => {
+      const handleMessage = (e: MessageEvent) => {
         const { id: resId, type, result, error } = e.data;
         if (resId !== id) return;
 
+        clearTimeout(timeoutId);
+        this.worker?.removeEventListener('message', handleMessage);
+
         if (type === 'done') {
-          clearTimeout(timeoutId);
           resolve(result);
         } else if (type === 'error') {
-          clearTimeout(timeoutId);
           reject(new Error(error));
         }
       };
 
+      this.worker.addEventListener('message', handleMessage);
       this.worker.postMessage({ id, workload, payload });
     });
+  }
+
+  private cleanupWorker() {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    this.initWorker();
   }
 
   terminate() {

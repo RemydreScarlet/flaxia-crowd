@@ -14,6 +14,14 @@ export interface NodeRecord {
   currentTaskId?: string;
 }
 
+interface WsMessage {
+  type: 'pong' | 'result' | 'error';
+  taskId?: string;
+  payload?: unknown;
+  cpuLoad?: number;
+  error?: string;
+}
+
 export class NodeManager extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -26,7 +34,7 @@ export class NodeManager extends DurableObject<Env> {
       const [client, server] = Object.values(pair);
 
       const nodeId = url.searchParams.get("nodeId") || crypto.randomUUID();
-      const capabilities = (url.searchParams.get("capabilities") || "").split(",") as WorkloadType[];
+      const capabilities = (url.searchParams.get("capabilities") || "").split(",").filter(Boolean) as WorkloadType[];
 
       await this.registerNode(server, nodeId, capabilities);
 
@@ -40,9 +48,14 @@ export class NodeManager extends DurableObject<Env> {
     }
 
     if (url.pathname === "/assign") {
-      const { nodeId, task } = await request.json() as any;
+      const { nodeId, task } = await request.json() as { nodeId: string; task: TaskRecord };
       await this.assignTask(nodeId, task);
       return new Response("OK");
+    }
+
+    if (url.pathname === "/nodes") {
+      const nodes = await this.getAllNodes();
+      return Response.json({ nodes });
     }
 
     return new Response("Not Found", { status: 404 });
@@ -61,32 +74,52 @@ export class NodeManager extends DurableObject<Env> {
     };
 
     await this.ctx.storage.put(`node:${nodeId}`, node);
-    
-    // Add to idle list
+
     const idleNodes = await this.getIdleNodes();
     if (!idleNodes.includes(nodeId)) {
       idleNodes.push(nodeId);
       await this.ctx.storage.put("nodes:idle", idleNodes);
     }
 
-    console.log(`Node registered: ${nodeId} with capabilities: ${capabilities}`);
-
-    // Notify TaskQueue that a node is available
     const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
     const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
-    taskQueue.fetch(new Request("http://internal/assign-next")).catch(e => console.error(e));
+    taskQueue.fetch(new Request("http://internal/assign-next")).catch(() => {});
   }
 
   async getIdleNodes(): Promise<string[]> {
     return (await this.ctx.storage.get<string[]>("nodes:idle")) || [];
   }
 
+  async getAllNodes(): Promise<NodeRecord[]> {
+    const nodeIds = await this.getNodeIds();
+    const nodes = await Promise.all(nodeIds.map(id => this.ctx.storage.get<NodeRecord>(`node:${id}`)));
+    return nodes.filter((n): n is NodeRecord => n !== undefined);
+  }
+
+  private async getNodeIds(): Promise<string[]> {
+    const list = await this.ctx.storage.list<string[]>({ prefix: "node:", limit: 1000 });
+    const ids: string[] = [];
+    for (const key of list.keys()) {
+      const id = key.replace("node:", "");
+      if (id !== "idle") ids.push(id);
+    }
+    return ids;
+  }
+
   async pickNode(workload: WorkloadType): Promise<string | undefined> {
     const idleNodeIds = await this.getIdleNodes();
-    const nodes = await Promise.all(idleNodeIds.map(id => this.ctx.storage.get<NodeRecord>(`node:${id}`)));
-    
+    if (idleNodeIds.length === 0) return undefined;
+
+    const nodes = await Promise.all(
+      idleNodeIds.map(id => this.ctx.storage.get<NodeRecord>(`node:${id}`))
+    );
+
     const candidates = nodes
-      .filter((n): n is NodeRecord => !!n && n.capabilities.includes(workload))
+      .filter((n): n is NodeRecord =>
+        !!n &&
+        n.capabilities.includes(workload) &&
+        this.ctx.getWebSockets(n.id).length > 0
+      )
       .sort((a, b) => a.cpuLoad - b.cpuLoad || a.connectedAt - b.connectedAt);
 
     return candidates[0]?.id;
@@ -101,8 +134,7 @@ export class NodeManager extends DurableObject<Env> {
       node.status = 'busy';
       node.currentTaskId = task.id;
       await this.ctx.storage.put(`node:${nodeId}`, node);
-      
-      // Remove from idle list
+
       const idleNodes = await this.getIdleNodes();
       await this.ctx.storage.put("nodes:idle", idleNodes.filter(id => id !== nodeId));
     }
@@ -117,7 +149,7 @@ export class NodeManager extends DurableObject<Env> {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const nodeId = this.ctx.getTags(ws)[0];
-    const data = JSON.parse(message as string);
+    const data: WsMessage = JSON.parse(message as string);
 
     if (data.type === 'pong') {
       const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
@@ -127,13 +159,9 @@ export class NodeManager extends DurableObject<Env> {
         await this.ctx.storage.put(`node:${nodeId}`, node);
       }
     } else if (data.type === 'result') {
-      // Handle result - notify TaskQueue
       const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
       const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
-      
-      // Use RPC if available, or fetch
-      // For now, let's assume we can fetch or use a internal method if they were in the same DO, 
-      // but they are separate. We can use stub.fetch.
+
       await taskQueue.fetch(new Request("http://internal/complete", {
         method: "POST",
         body: JSON.stringify({
@@ -143,13 +171,38 @@ export class NodeManager extends DurableObject<Env> {
         })
       }));
 
-      // Mark node as idle again
       const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
       if (node) {
         node.status = 'idle';
         delete node.currentTaskId;
         await this.ctx.storage.put(`node:${nodeId}`, node);
-        
+
+        const idleNodes = await this.getIdleNodes();
+        if (!idleNodes.includes(nodeId)) {
+          idleNodes.push(nodeId);
+          await this.ctx.storage.put("nodes:idle", idleNodes);
+        }
+      }
+    } else if (data.type === 'error') {
+      const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
+      const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
+
+      await taskQueue.fetch(new Request("http://internal/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          taskId: data.taskId,
+          result: null,
+          nodeId,
+          error: data.error
+        })
+      }));
+
+      const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
+      if (node) {
+        node.status = 'idle';
+        delete node.currentTaskId;
+        await this.ctx.storage.put(`node:${nodeId}`, node);
+
         const idleNodes = await this.getIdleNodes();
         if (!idleNodes.includes(nodeId)) {
           idleNodes.push(nodeId);
@@ -168,11 +221,9 @@ export class NodeManager extends DurableObject<Env> {
     await this.ctx.storage.delete(`node:${nodeId}`);
     const idleNodes = await this.getIdleNodes();
     await this.ctx.storage.put("nodes:idle", idleNodes.filter(id => id !== nodeId));
-    console.log(`Node unregistered: ${nodeId}`);
   }
 
   async alarm() {
-    // Ping all and check stale nodes
     const websockets = this.ctx.getWebSockets();
     for (const ws of websockets) {
       ws.send(JSON.stringify({ type: 'ping' }));

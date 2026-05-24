@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
-    "@huggingface/transformers": "^4.0.0"
+    "@huggingface/transformers": "^4.2.0"
   },
   "devDependencies": {
     "@flaxia/sdk": "*",

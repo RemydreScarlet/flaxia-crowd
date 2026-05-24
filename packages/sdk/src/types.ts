@@ -84,7 +84,7 @@ export interface ContainerResult {
 
 // --- Core Task Types ---
 
-export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | unknown;
+export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload;
 
 export interface TaskRecord {
   id: string;

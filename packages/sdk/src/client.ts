@@ -1,5 +1,5 @@
-import { TaskPayload, WorkloadType, TaskRecord } from './types';
-import { AuthenticationError, FlaxiaError, ValidationError } from './errors';
+import type { TaskPayload, WorkloadType, TaskRecord } from './types';
+import { AuthenticationError, FlaxiaError, TaskNotFoundError, ValidationError } from './errors';
 
 export interface FlaxiaClientConfig {
   apiKey: string;
@@ -24,9 +24,6 @@ export class FlaxiaClient {
     this.baseUrl = config.baseUrl || 'https://api.flaxia.crowd';
   }
 
-  /**
-   * Submit a task to Flaxia Crowd
-   */
   async submit(options: SubmitTaskOptions): Promise<TaskRecord> {
     if (!options.workload || !options.payload) {
       throw new ValidationError('workload and payload are required');
@@ -42,15 +39,12 @@ export class FlaxiaClient {
     });
 
     if (!response.ok) {
-      throw new FlaxiaError(`Failed to submit task: ${response.statusText}`, 'SUBMIT_ERROR', response.status);
+      throw new FlaxiaError(response.statusText || 'Failed to submit task', 'SUBMIT_ERROR', response.status);
     }
 
-    return response.json();
+    return response.json() as Promise<TaskRecord>;
   }
 
-  /**
-   * Get task status and results
-   */
   async getTask(taskId: string): Promise<TaskRecord> {
     const response = await fetch(`${this.baseUrl}/tasks/${taskId}`, {
       headers: {
@@ -59,19 +53,16 @@ export class FlaxiaClient {
     });
 
     if (response.status === 404) {
-      throw new FlaxiaError(`Task not found: ${taskId}`, 'TASK_NOT_FOUND', 404);
+      throw new TaskNotFoundError(taskId);
     }
 
     if (!response.ok) {
-      throw new FlaxiaError(`Failed to fetch task: ${response.statusText}`, 'FETCH_ERROR', response.status);
+      throw new FlaxiaError(response.statusText || 'Failed to fetch task', 'FETCH_ERROR', response.status);
     }
 
-    return response.json();
+    return response.json() as Promise<TaskRecord>;
   }
 
-  /**
-   * Poll for task completion
-   */
   async waitForTask(taskId: string, intervalMs = 2000, timeoutMs = 60000): Promise<TaskRecord> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {

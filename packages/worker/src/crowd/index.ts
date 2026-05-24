@@ -4,7 +4,6 @@ import type { TaskRecord, WorkloadType } from '@flaxia/sdk'
 
 const app = new Hono<{ Bindings: Env }>()
 
-// Signaling - Upgrading to NodeManager Durable Object
 app.get('/signal', async (c) => {
   const upgradeHeader = c.req.header('Upgrade')
   if (!upgradeHeader || upgradeHeader !== 'websocket') {
@@ -26,20 +25,24 @@ app.get('/signal', async (c) => {
   }))
 })
 
-// Tasks
 app.post('/tasks', async (c) => {
-  const { workload, payload, timeoutMs, callbackUrl } = await c.req.json()
+  const body = await c.req.json() as {
+    workload: string
+    payload: unknown
+    timeoutMs?: number
+    callbackUrl?: string
+  }
   const taskId = crypto.randomUUID()
-  
+
   const task: TaskRecord = {
     id: taskId,
     status: 'pending',
-    workload: workload as WorkloadType,
-    payload,
+    workload: body.workload as WorkloadType,
+    payload: body.payload,
     createdAt: Date.now(),
     retryCount: 0,
-    timeoutMs: timeoutMs || 30000,
-    callbackUrl
+    timeoutMs: body.timeoutMs || 30000,
+    callbackUrl: body.callbackUrl,
   }
 
   const id = c.env.TASK_QUEUE.idFromName('global-queue')
@@ -54,19 +57,19 @@ app.get('/tasks/:id', async (c) => {
   const doId = c.env.TASK_QUEUE.idFromName('global-queue')
   const obj = c.env.TASK_QUEUE.get(doId)
   const task = await obj.getTask(id)
-  
+
   if (!task) return c.json({ error: 'Not found' }, 404)
   return c.json(task)
 })
 
 app.post('/tasks/:id/result', async (c) => {
   const id = c.req.param('id')
-  const { result, nodeId } = await c.req.json()
-  
+  const { result, nodeId } = await c.req.json() as { result: unknown; nodeId: string }
+
   const doId = c.env.TASK_QUEUE.idFromName('global-queue')
   const obj = c.env.TASK_QUEUE.get(doId)
-  
-  await obj.fetch(new Request(`http://internal/complete`, {
+
+  await obj.fetch(new Request('http://internal/complete', {
     method: 'POST',
     body: JSON.stringify({ taskId: id, result, nodeId })
   }))
@@ -74,13 +77,13 @@ app.post('/tasks/:id/result', async (c) => {
   return c.json({ id, message: 'Result posted' })
 })
 
-// Nodes
 app.get('/nodes', async (c) => {
   const id = c.env.NODE_MANAGER.idFromName('global-manager')
   const obj = c.env.NODE_MANAGER.get(id)
-  
-  // We can add a method to get all nodes if needed
-  return c.json({ nodes: [] })
+
+  const response = await obj.fetch(new Request('http://internal/nodes'))
+  const data = await response.json() as { nodes: unknown }
+  return c.json(data)
 })
 
 export { app as crowdApp }

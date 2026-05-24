@@ -1,30 +1,39 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { env } from 'cloudflare:test';
-import { TaskRecord } from '@flaxia/sdk';
+import type { TaskRecord } from '@flaxia/sdk';
 
 describe('Task Flow Integration', () => {
-  it('should handle full task lifecycle: enqueue -> assign -> complete', async () => {
-    const taskQueueId = env.TASK_QUEUE.idFromName('test-queue');
-    const taskQueue = env.TASK_QUEUE.get(taskQueueId);
+  it('should return undefined when no node is registered', async () => {
+    const nodeManagerId = env.NODE_MANAGER.idFromName('flow-empty');
+    const nodeManagerStub = env.NODE_MANAGER.get(nodeManagerId);
 
-    const nodeManagerId = env.NODE_MANAGER.idFromName('global-manager');
-    const nodeManager = env.NODE_MANAGER.get(nodeManagerId);
-
-    // 1. Mock Node Registration
-    // In Vitest pool, we can't easily mock WebSocket connections held inside DO,
-    // but we can test the state via internal fetch calls if we add them.
-    // Let's use the internal API to see if it works.
-    
-    // For testing purposes, we might need to expose more via fetch in DOs.
-    // I already added /pick and /assign to NodeManager, and /complete to TaskQueue.
-
-    // Let's simulate a node being registered by manually putting it in storage if possible,
-    // or by calling a (hypothetical) register-mock endpoint.
-    
-    // Actually, I'll just test the TaskQueue logic in isolation first with mocked NodeManager calls.
+    const response = await nodeManagerStub.fetch(new Request('http://internal/pick?workload=ai-inference'));
+    expect(response.status).toBe(200);
+    const data = await response.json() as { nodeId?: string };
+    expect(data.nodeId).toBeUndefined();
   });
 
-  it('should timeout a task if not completed', async () => {
-      // Test checkTimeouts
+  it('should enqueue and retrieve a task', async () => {
+    const taskQueueId = env.TASK_QUEUE.idFromName('flow-enqueue');
+    const taskQueueStub = env.TASK_QUEUE.get(taskQueueId);
+
+    const task: TaskRecord = {
+      id: 'flow-task-1',
+      status: 'pending',
+      workload: 'ai-inference',
+      payload: { task: 'text-classification', model: 'test', input: 'hi' },
+      createdAt: Date.now(),
+      retryCount: 0,
+      timeoutMs: 30000,
+    };
+
+    await taskQueueStub.enqueue(task);
+
+    const retrieved = await taskQueueStub.getTask('flow-task-1');
+    expect(retrieved).toBeDefined();
+    expect(retrieved!.status).toBe('pending');
+
+    const pending = await taskQueueStub.getPending();
+    expect(pending).toContain('flow-task-1');
   });
 });

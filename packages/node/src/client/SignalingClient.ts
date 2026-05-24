@@ -4,10 +4,18 @@ import { WorkerPool } from '../executor/WorkerPool';
 
 import type { NodeConfig, WorkloadType } from '@flaxia/sdk';
 
+export interface TaskMessage {
+  type: 'task';
+  taskId: string;
+  workload: WorkloadType;
+  payload: unknown;
+}
+
 class SignalingClient {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_DELAY = 30000;
+  private destroyed = false;
 
   constructor(
     private config: NodeConfig,
@@ -16,6 +24,8 @@ class SignalingClient {
   ) {}
 
   connect() {
+    if (this.destroyed) return;
+
     const capabilities: WorkloadType[] = ['ai-inference', 'image-process'];
     const wsUrl = new URL(`${this.config.orchestratorUrl.replace('http', 'ws')}/crowd/signal`);
     wsUrl.searchParams.set('nodeId', this.nodeId);
@@ -24,7 +34,6 @@ class SignalingClient {
     this.ws = new WebSocket(wsUrl.toString());
 
     this.ws.onopen = () => {
-      console.log(`Connected to Flaxia Orchestrator as ${this.nodeId}`);
       this.reconnectAttempts = 0;
     };
 
@@ -35,14 +44,15 @@ class SignalingClient {
         return;
       }
       if (data.type === 'task') {
-        this.handleTask(data);
+        this.handleTask(data as TaskMessage);
       }
     };
 
     this.ws.onclose = () => {
       this.ws = null;
+      if (this.destroyed) return;
+
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.MAX_RECONNECT_DELAY);
-      console.log(`Connection closed. Retrying in ${delay}ms...`);
       setTimeout(() => {
         this.reconnectAttempts++;
         this.connect();
@@ -50,8 +60,13 @@ class SignalingClient {
     };
   }
 
-  private async handleTask(data: any) {
-    console.log('Task received:', data.taskId, data.workload);
+  disconnect() {
+    this.destroyed = true;
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  private async handleTask(data: TaskMessage) {
     try {
       const result = await this.workerPool.run(data.taskId, data.workload, data.payload);
       this.ws?.send(JSON.stringify({ type: 'result', taskId: data.taskId, payload: result }));
@@ -84,10 +99,12 @@ export const initFlaxiaNode = (config: NodeConfig) => {
   }
 
   const container = document.createElement('div');
+  container.id = 'flaxia-consent-container';
   document.body.appendChild(container);
 
-  new ConsentUI(container, config.consent, () => {
+  const ui = new ConsentUI(container, config.consent, () => {
     saveConsent();
+    container.remove();
     startNode(config);
   });
 };

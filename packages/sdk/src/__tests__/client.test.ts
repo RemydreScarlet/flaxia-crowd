@@ -1,16 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FlaxiaClient } from '../client';
-import { TaskRecord } from '../types';
+import type { TaskRecord } from '../types';
+import { TaskNotFoundError, FlaxiaError, AuthenticationError } from '../errors';
 
 describe('FlaxiaClient', () => {
   const apiKey = 'fc_test_abc123';
+  const baseUrl = 'https://api.flaxia.crowd';
   const client = new FlaxiaClient({ apiKey });
 
   beforeEach(() => {
     global.fetch = vi.fn();
   });
 
-  it('submits a task successfully', async () => {
+  describe('constructor', () => {
+    it('throws AuthenticationError if API key is empty', () => {
+      expect(() => new FlaxiaClient({ apiKey: '' })).toThrow(AuthenticationError);
+    });
+
+    it('uses custom baseUrl when provided', () => {
+      const c = new FlaxiaClient({ apiKey, baseUrl: 'http://localhost:8787' });
+      expect((c as any).baseUrl).toBe('http://localhost:8787');
+    });
+
+    it('uses default baseUrl when not provided', () => {
+      const c = new FlaxiaClient({ apiKey });
+      expect((c as any).baseUrl).toBe('https://api.flaxia.crowd');
+    });
+  });
+
+  describe('submit', () => {
     const mockTask: TaskRecord = {
       id: 'task_1',
       status: 'pending',
@@ -21,47 +39,246 @@ describe('FlaxiaClient', () => {
       timeoutMs: 30000,
     };
 
-    (fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => mockTask,
+    it('submits a task successfully', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => mockTask,
+      });
+
+      const result = await client.submit({
+        workload: 'ai-inference',
+        payload: { task: 'test', model: 'test', input: 'hi' },
+      });
+
+      expect(result).toEqual(mockTask);
+      expect(fetch).toHaveBeenCalledWith(`${baseUrl}/tasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          workload: 'ai-inference',
+          payload: { task: 'test', model: 'test', input: 'hi' },
+        }),
+      });
     });
 
-    const result = await client.submit({
-      workload: 'ai-inference',
-      payload: { task: 'test', model: 'test', input: 'hi' },
+    it('includes callbackUrl when provided', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => mockTask,
+      });
+
+      await client.submit({
+        workload: 'ai-inference',
+        payload: { task: 'test', model: 'test', input: 'hi' },
+        callbackUrl: 'https://example.com/callback',
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.callbackUrl).toBe('https://example.com/callback');
     });
 
-    expect(result).toEqual(mockTask);
-    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-      method: 'POST',
-      headers: expect.objectContaining({
-        'Authorization': `Bearer ${apiKey}`,
-      }),
-    }));
+    it('throws ValidationError for missing workload', async () => {
+      await expect(client.submit({} as any)).rejects.toThrow('workload and payload are required');
+    });
+
+    it('throws ValidationError for missing payload', async () => {
+      await expect(client.submit({ workload: 'ai-inference' } as any)).rejects.toThrow('workload and payload are required');
+    });
+
+    it('throws FlaxiaError on server error', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      await expect(client.submit({
+        workload: 'ai-inference',
+        payload: { task: 'test', model: 'test', input: 'hi' },
+      })).rejects.toThrow(FlaxiaError);
+    });
+
+    it('throws FlaxiaError with SUBMIT_ERROR code on server error', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+      });
+
+      try {
+        await client.submit({
+          workload: 'ai-inference',
+          payload: { task: 'test', model: 'test', input: 'hi' },
+        });
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(FlaxiaError);
+        expect((e as FlaxiaError).code).toBe('SUBMIT_ERROR');
+        expect((e as FlaxiaError).status).toBe(400);
+      }
+    });
   });
 
-  it('throws an error if API key is missing', () => {
-    expect(() => new FlaxiaClient({ apiKey: '' as any })).toThrow('API Key is required');
-  });
+  describe('getTask', () => {
+    it('gets a task by id', async () => {
+      const mockTask: TaskRecord = {
+        id: 'task_1',
+        status: 'done',
+        workload: 'ai-inference',
+        payload: {},
+        createdAt: Date.now(),
+        retryCount: 0,
+        timeoutMs: 30000,
+        result: { output: 'test' },
+      };
 
-  it('polls for task completion', async () => {
-    const mockTask: TaskRecord = {
-      id: 'task_1',
-      status: 'done',
-      workload: 'ai-inference',
-      payload: {},
-      createdAt: Date.now(),
-      retryCount: 0,
-      timeoutMs: 30000,
-    } as any;
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => mockTask,
+      });
 
-    (fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => mockTask,
+      const result = await client.getTask('task_1');
+      expect(result).toEqual(mockTask);
+      expect(fetch).toHaveBeenCalledWith(`${baseUrl}/tasks/task_1`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
     });
 
-    const result = await client.waitForTask('task_1', 10);
-    expect(result.status).toBe('done');
-    expect(fetch).toHaveBeenCalledTimes(1);
+    it('throws TaskNotFoundError for 404', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+      await expect(client.getTask('nonexistent')).rejects.toThrow(TaskNotFoundError);
+    });
+
+    it('throws FlaxiaError on other error status', async () => {
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      try {
+        await client.getTask('task_1');
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(FlaxiaError);
+        expect((e as FlaxiaError).code).toBe('FETCH_ERROR');
+        expect((e as FlaxiaError).status).toBe(500);
+      }
+    });
+  });
+
+  describe('waitForTask', () => {
+    it('returns task when done', async () => {
+      const mockTask: TaskRecord = {
+        id: 'task_1',
+        status: 'done',
+        workload: 'ai-inference',
+        payload: {},
+        createdAt: Date.now(),
+        retryCount: 0,
+        timeoutMs: 30000,
+        result: { output: 'result' },
+      };
+
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => mockTask,
+      });
+
+      const result = await client.waitForTask('task_1', 10, 5000);
+      expect(result.status).toBe('done');
+      expect(result.result).toEqual({ output: 'result' });
+    });
+
+    it('returns task when failed', async () => {
+      const mockTask: TaskRecord = {
+        id: 'task_1',
+        status: 'failed',
+        workload: 'ai-inference',
+        payload: {},
+        createdAt: Date.now(),
+        retryCount: 3,
+        timeoutMs: 30000,
+        error: 'Max retries exceeded',
+      };
+
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => mockTask,
+      });
+
+      const result = await client.waitForTask('task_1', 10, 5000);
+      expect(result.status).toBe('failed');
+      expect(result.error).toBe('Max retries exceeded');
+    });
+
+    it('polls multiple times until done', async () => {
+      const pendingTask: TaskRecord = {
+        id: 'task_1', status: 'pending', workload: 'ai-inference',
+        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+      };
+      const doneTask: TaskRecord = {
+        id: 'task_1', status: 'done', workload: 'ai-inference',
+        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+        result: { output: 'final' },
+      };
+
+      let callCount = 0;
+      (fetch as any).mockImplementation(async () => ({
+        ok: true,
+        json: async () => {
+          callCount++;
+          return callCount === 1 ? pendingTask : doneTask;
+        },
+      }));
+
+      const result = await client.waitForTask('task_1', 5, 5000);
+      expect(result.status).toBe('done');
+      expect(callCount).toBe(2);
+    });
+
+    it('throws FlaxiaError on polling timeout', async () => {
+      const pendingTask: TaskRecord = {
+        id: 'task_1', status: 'pending', workload: 'ai-inference',
+        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+      };
+
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => pendingTask,
+      });
+
+      await expect(client.waitForTask('task_1', 5, 50)).rejects.toThrow(FlaxiaError);
+      await expect(client.waitForTask('task_1', 5, 50)).rejects.toThrow(/polling timed out/);
+    });
+
+    it('throws FlaxiaError with POLLING_TIMEOUT code on timeout', async () => {
+      const pendingTask: TaskRecord = {
+        id: 'task_1', status: 'pending', workload: 'ai-inference',
+        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+      };
+
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => pendingTask,
+      });
+
+      try {
+        await client.waitForTask('task_1', 5, 50);
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(FlaxiaError);
+        expect((e as FlaxiaError).code).toBe('POLLING_TIMEOUT');
+        expect((e as FlaxiaError).status).toBe(408);
+      }
+    });
   });
 });
