@@ -30,7 +30,7 @@ export class WorkerPool {
       }
 
       const timeout = timeoutMs ?? this.defaultTimeoutMs;
-      const timeoutId = setTimeout(() => {
+      let timeoutId = setTimeout(() => {
         this.cleanupWorker();
         reject(new Error('TIMEOUT'));
       }, timeout);
@@ -41,6 +41,11 @@ export class WorkerPool {
 
         if (type === 'token') {
           onToken?.(token);
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            this.cleanupWorker();
+            reject(new Error('TIMEOUT'));
+          }, timeout);
           return;
         }
 

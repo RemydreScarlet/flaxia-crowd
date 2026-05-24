@@ -229,6 +229,7 @@ chatInputForm.addEventListener('submit', async (e) => {
 
     const taskId = taskRecord.id || (taskRecord as any).taskId;
     const startTime = Date.now();
+    let lastActivityTime = startTime;
     let pollInterval = 1000;
     let isFinished = false;
     let streamedText = '';
@@ -247,6 +248,7 @@ chatInputForm.addEventListener('submit', async (e) => {
         if (msg.type === 'subscribed') {
           console.log('[Stream] subscribed to task', taskId);
         } else if (msg.type === 'token') {
+          lastActivityTime = Date.now();
           if (!replyMessage) {
             systemMsg.remove();
             replyMessage = appendMessage('assistant', '');
@@ -280,6 +282,7 @@ chatInputForm.addEventListener('submit', async (e) => {
       
       const currentTask = await client.getTask(taskId);
       const elapsed = (Date.now() - startTime) / 1000;
+      const idleSinceLastToken = (Date.now() - lastActivityTime) / 1000;
 
       if (currentTask.status === 'processing') {
         updateVisualizer('processing', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
@@ -329,7 +332,7 @@ chatInputForm.addEventListener('submit', async (e) => {
         }
       }
 
-      if (elapsed > 90) {
+      if (idleSinceLastToken > 90) {
         isFinished = true;
         streamWs?.close();
         updateVisualizer('failed', taskId);
