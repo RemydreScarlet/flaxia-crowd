@@ -5,10 +5,13 @@ self.onmessage = async (e: MessageEvent) => {
 
   try {
     let result;
+    const emitToken = (token: string) => {
+      self.postMessage({ id, type: 'token', token });
+    };
     switch (workload as WorkloadType) {
       case 'ai-inference':
         const { handleAiInference } = await import('../workloads/ai-inference');
-        result = await handleAiInference(payload);
+        result = await handleAiInference(payload, emitToken);
         break;
       case 'image-process':
         const { handleImageProcess } = await import('../workloads/image-process');

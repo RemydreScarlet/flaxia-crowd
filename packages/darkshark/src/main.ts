@@ -229,13 +229,52 @@ chatInputForm.addEventListener('submit', async (e) => {
 
     const taskId = taskRecord.id || (taskRecord as any).taskId;
     const startTime = Date.now();
-    let pollInterval = 1000; // ms
+    let pollInterval = 1000;
     let isFinished = false;
+    let streamedText = '';
 
     updateVisualizer('pending', taskId, '-', 0);
     systemMsg.querySelector('.message-content')!.innerHTML = `Task queued. Task ID: <code style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px;">${taskId}</code>`;
 
-    // 2. Poll orchestrator for results
+    // 2a. Connect streaming WebSocket
+    let streamWs: WebSocket | null = null;
+    let replyMessage: HTMLDivElement | null = null;
+    try {
+      const wsUrl = orchestratorUrl.replace('http', 'ws');
+      streamWs = new WebSocket(`${wsUrl}/crowd/subscribe?taskId=${taskId}`);
+      streamWs.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'subscribed') {
+          console.log('[Stream] subscribed to task', taskId);
+        } else if (msg.type === 'token') {
+          if (!replyMessage) {
+            systemMsg.remove();
+            replyMessage = appendMessage('assistant', '');
+          }
+          streamedText += msg.token;
+          const contentEl = replyMessage.querySelector('.message-content') as HTMLElement;
+          contentEl.innerHTML = streamedText.replace(/\n/g, '<br>');
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        } else if (msg.type === 'done') {
+          isFinished = true;
+          streamWs?.close();
+        } else if (msg.type === 'error') {
+          isFinished = true;
+          streamWs?.close();
+          if (replyMessage) {
+            const contentEl = replyMessage.querySelector('.message-content') as HTMLElement;
+            contentEl.innerHTML += `<br><span style="color:#ff3366;">Error: ${msg.error}</span>`;
+          } else {
+            systemMsg.querySelector('.message-content')!.innerHTML = `Task failed: <span style="color: #ff3366;">${msg.error || 'Unknown Error'}</span>`;
+          }
+        }
+      };
+      streamWs.onerror = () => console.log('[Stream] WebSocket error, falling back to polling');
+    } catch {
+      console.log('[Stream] Could not connect, falling back to polling');
+    }
+
+    // 2b. Poll orchestrator for completion (fallback + final status)
     while (!isFinished) {
       await new Promise(r => setTimeout(r, pollInterval));
       
@@ -248,44 +287,51 @@ chatInputForm.addEventListener('submit', async (e) => {
       } 
       
       else if (currentTask.status === 'done') {
-        isFinished = true;
-        updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
-        systemMsg.remove();
+        if (!streamedText) {
+          isFinished = true;
+          streamWs?.close();
+          updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
+          systemMsg.remove();
 
-        // Display assistant reply
-        const replyMessage = appendMessage('assistant', 'Generating reply...');
-        
-        // Extract output from Qwen text-generation result
-        let reply = 'No output returned.';
-        const resultPayload = currentTask.result as any;
-        if (resultPayload && resultPayload.output) {
-          const out = resultPayload.output;
-          if (Array.isArray(out) && out[0] && typeof out[0].generated_text === 'string') {
-            reply = out[0].generated_text;
-            // Trim prompt if Qwen returns the full prompt + generation
-            if (reply.startsWith(prompt)) {
-              reply = reply.substring(prompt.length).trim();
+          replyMessage = appendMessage('assistant', 'Generating reply...');
+
+          let reply = 'No output returned.';
+          const resultPayload = currentTask.result as any;
+          if (resultPayload && resultPayload.output) {
+            const out = resultPayload.output;
+            if (Array.isArray(out) && out[0] && typeof out[0].generated_text === 'string') {
+              reply = out[0].generated_text;
+              if (reply.startsWith(prompt)) {
+                reply = reply.substring(prompt.length).trim();
+              }
+            } else if (typeof out === 'string') {
+              reply = out;
+            } else {
+              reply = JSON.stringify(out);
             }
-          } else if (typeof out === 'string') {
-            reply = out;
-          } else {
-            reply = JSON.stringify(out);
           }
+
+          await typeReply(replyMessage.querySelector('.message-content') as HTMLElement, reply);
+        } else {
+          isFinished = true;
+          streamWs?.close();
+          updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
         }
-        
-        await typeReply(replyMessage.querySelector('.message-content') as HTMLElement, reply);
       } 
       
       else if (currentTask.status === 'failed') {
-        isFinished = true;
-        updateVisualizer('failed', taskId);
-        systemMsg.querySelector('.message-content')!.innerHTML = `Task failed: <span style="color: #ff3366;">${currentTask.error || 'Unknown Error'}</span>`;
-        updateNodeUI();
+        if (!streamedText) {
+          isFinished = true;
+          streamWs?.close();
+          updateVisualizer('failed', taskId);
+          systemMsg.querySelector('.message-content')!.innerHTML = `Task failed: <span style="color: #ff3366;">${currentTask.error || 'Unknown Error'}</span>`;
+          updateNodeUI();
+        }
       }
 
-      // Safeguard timeout (e.g. 90 seconds)
       if (elapsed > 90) {
         isFinished = true;
+        streamWs?.close();
         updateVisualizer('failed', taskId);
         systemMsg.querySelector('.message-content')!.innerHTML = 'Task execution timed out after 90 seconds.';
         updateNodeUI();

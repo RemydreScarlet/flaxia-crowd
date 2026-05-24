@@ -16,7 +16,13 @@ export class WorkerPool {
     this.worker = new Worker(this.workerUrl, { type: 'module' });
   }
 
-  run(id: string, workload: WorkloadType, payload: unknown, timeoutMs?: number): Promise<unknown> {
+  run(
+    id: string,
+    workload: WorkloadType,
+    payload: unknown,
+    timeoutMs?: number,
+    onToken?: (token: string) => void,
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         reject(new Error('Worker not available'));
@@ -30,8 +36,13 @@ export class WorkerPool {
       }, timeout);
 
       const handleMessage = (e: MessageEvent) => {
-        const { id: resId, type, result, error } = e.data;
+        const { id: resId, type, result, error, token } = e.data;
         if (resId !== id) return;
+
+        if (type === 'token') {
+          onToken?.(token);
+          return;
+        }
 
         clearTimeout(timeoutId);
         this.worker?.removeEventListener('message', handleMessage);

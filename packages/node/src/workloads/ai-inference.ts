@@ -1,7 +1,6 @@
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, TextStreamer } from '@huggingface/transformers';
 import type { AiInferencePayload, AiInferenceResult } from '@flaxia/sdk';
 
-// Support list based on Transformers.js
 const SUPPORTED_TASKS = [
   'text-classification', 'token-classification', 'question-answering', 'fill-mask',
   'summarization', 'translation', 'text2text-generation', 'text-generation',
@@ -12,19 +11,40 @@ const SUPPORTED_TASKS = [
   'image-to-image', 'depth-estimation', 'feature-extraction', 'image-feature-extraction'
 ] as const;
 
-// Cache pipelines to avoid reloading models for each task
 const pipelineCache = new Map<string, any>();
 
-export const handleAiInference = async (payload: AiInferencePayload): Promise<AiInferenceResult> => {
+export const handleAiInference = async (
+  payload: AiInferencePayload,
+  onToken?: (token: string) => void,
+): Promise<AiInferenceResult> => {
   const { task, model, input } = payload;
 
   if (!SUPPORTED_TASKS.includes(task as any)) {
     throw new Error(`Invalid or unsupported task: ${task}. Supported tasks are: ${SUPPORTED_TASKS.join(', ')}`);
   }
 
-  // Temporary bypass for model loading: return dummy response
-  console.log(`[Dummy] Returning mock response for task: ${task}, model: ${model}`);
-  return { 
-    output: [{ generated_text: 'this is AI Response mocks' }] 
+  const cacheKey = `${task}:${model}`;
+  let generator = pipelineCache.get(cacheKey);
+  if (!generator) {
+    generator = await pipeline(task as any, model, { dtype: (payload.options?.dtype as any) || 'q4f16' });
+    pipelineCache.set(cacheKey, generator);
+  }
+
+  const genOptions: Record<string, unknown> = {
+    max_new_tokens: (payload.options?.max_new_tokens as number) || 128,
   };
+
+  if (onToken && generator.tokenizer) {
+    const streamer = new TextStreamer(generator.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (text: string) => {
+        onToken(text);
+      },
+    });
+    genOptions.streamer = streamer;
+  }
+
+  const output = await generator(input, genOptions);
+  return { output };
 };

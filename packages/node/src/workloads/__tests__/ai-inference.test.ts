@@ -1,14 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
 import { handleAiInference } from '../ai-inference';
 
-vi.mock('@huggingface/transformers', () => ({
-  pipeline: vi.fn().mockResolvedValue(
-    vi.fn().mockResolvedValue([{ label: 'POSITIVE', score: 0.99 }])
-  )
-}));
+vi.mock('@huggingface/transformers', () => {
+  const gen = Object.assign(
+    vi.fn().mockResolvedValue([{ label: 'POSITIVE', score: 0.99 }]),
+    { tokenizer: {} },
+  );
+  return {
+    pipeline: vi.fn().mockResolvedValue(gen),
+    TextStreamer: class { constructor() {} },
+  };
+});
 
 describe('AI Inference Workload', () => {
-  it('should return dummy response for text-classification', async () => {
+  it('should return pipeline output for text-classification', async () => {
     const payload = {
       task: 'text-classification',
       model: 'Xenova/distilbert-base-uncased-finetuned-sst-2-english',
@@ -19,8 +24,18 @@ describe('AI Inference Workload', () => {
     const result = await handleAiInference(payload);
 
     expect(result.output).toBeDefined();
-    const output = result.output as any;
-    expect(output[0].generated_text).toBe('this is AI Response mocks');
+    expect(result.output).toEqual([{ label: 'POSITIVE', score: 0.99 }]);
+  });
+
+  it('should pass streamer to generator when onToken provided', async () => {
+    const payload = {
+      task: 'text-classification',
+      model: 'test-model',
+      input: 'hello',
+    };
+
+    const result = await handleAiInference(payload, () => {});
+    expect(result.output).toBeDefined();
   });
 
   it('should throw an error for unsupported tasks', async () => {

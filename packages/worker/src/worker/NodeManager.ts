@@ -15,11 +15,12 @@ export interface NodeRecord {
 }
 
 interface WsMessage {
-  type: 'pong' | 'result' | 'error';
+  type: 'pong' | 'result' | 'error' | 'progress';
   taskId?: string;
   payload?: unknown;
   cpuLoad?: number;
   error?: string;
+  token?: string;
 }
 
 export class NodeManager extends DurableObject<Env> {
@@ -37,6 +38,20 @@ export class NodeManager extends DurableObject<Env> {
       const capabilities = (url.searchParams.get("capabilities") || "").split(",").filter(Boolean) as WorkloadType[];
 
       await this.registerNode(server, nodeId, capabilities);
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    if (url.pathname === "/subscribe") {
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+
+      const taskId = url.searchParams.get("taskId");
+      if (!taskId) return new Response("taskId is required", { status: 400 });
+
+      this.ctx.acceptWebSocket(server, [`client:${taskId}`]);
+
+      server.send(JSON.stringify({ type: 'subscribed', taskId }));
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -176,6 +191,15 @@ export class NodeManager extends DurableObject<Env> {
         node.cpuLoad = data.cpuLoad || 0;
         await this.ctx.storage.put(`node:${nodeId}`, node);
       }
+    } else if (data.type === 'progress') {
+      const taskId = data.taskId;
+      const token = data.token;
+      if (taskId && token) {
+        const clientWss = this.ctx.getWebSockets(`client:${taskId}`);
+        for (const ws of clientWss) {
+          try { ws.send(JSON.stringify({ type: 'token', token })); } catch {}
+        }
+      }
     } else if (data.type === 'result') {
       const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
       const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
@@ -200,6 +224,14 @@ export class NodeManager extends DurableObject<Env> {
           idleNodes.push(nodeId);
           await this.ctx.storage.put("nodes:idle", idleNodes);
         }
+      }
+
+      const clientWss = this.ctx.getWebSockets(`client:${data.taskId}`);
+      for (const ws of clientWss) {
+        try {
+          ws.send(JSON.stringify({ type: 'done', result: data.payload }));
+          ws.close();
+        } catch {}
       }
     } else if (data.type === 'error') {
       const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
@@ -227,13 +259,25 @@ export class NodeManager extends DurableObject<Env> {
           await this.ctx.storage.put("nodes:idle", idleNodes);
         }
       }
+
+      const clientWss = this.ctx.getWebSockets(`client:${data.taskId}`);
+      for (const ws of clientWss) {
+        try {
+          ws.send(JSON.stringify({ type: 'error', error: data.error }));
+          ws.close();
+        } catch {}
+      }
     }
   }
 
   async webSocketClose(ws: WebSocket) {
-    const nodeId = this.ctx.getTags(ws)[0];
-    console.log(`[NodeManager] webSocketClose: node=${nodeId}`);
-    await this.unregisterNode(nodeId);
+    const tags = this.ctx.getTags(ws);
+    const tag = tags[0];
+    if (tag?.startsWith('client:')) {
+      return;
+    }
+    console.log(`[NodeManager] webSocketClose: node=${tag}`);
+    await this.unregisterNode(tag);
   }
 
   async unregisterNode(nodeId: string) {

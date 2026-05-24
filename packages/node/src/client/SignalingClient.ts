@@ -68,7 +68,13 @@ class SignalingClient {
 
   private async handleTask(data: TaskMessage) {
     try {
-      const result = await this.workerPool.run(data.taskId, data.workload, data.payload);
+      const result = await this.workerPool.run(
+        data.taskId, data.workload, data.payload,
+        undefined,
+        (token: string) => {
+          this.ws?.send(JSON.stringify({ type: 'progress', taskId: data.taskId, token }));
+        },
+      );
       this.ws?.send(JSON.stringify({ type: 'result', taskId: data.taskId, payload: result }));
     } catch (err) {
       this.ws?.send(JSON.stringify({

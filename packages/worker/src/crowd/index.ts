@@ -27,6 +27,28 @@ app.get('/signal', async (c) => {
   }))
 })
 
+app.get('/subscribe', async (c) => {
+  const upgradeHeader = c.req.header('Upgrade')
+  if (!upgradeHeader || upgradeHeader !== 'websocket') {
+    return c.text('Expected Upgrade: websocket', 426)
+  }
+
+  const taskId = c.req.query('taskId')
+  if (!taskId) return c.text('taskId is required', 400)
+
+  const id = c.env.NODE_MANAGER.idFromName('global-manager')
+  const obj = c.env.NODE_MANAGER.get(id)
+
+  const url = new URL(c.req.url)
+  url.pathname = '/subscribe'
+  url.searchParams.set('taskId', taskId)
+
+  return obj.fetch(new Request(url.toString(), {
+    headers: c.req.raw.headers,
+    signal: c.req.raw.signal,
+  }))
+})
+
 app.post('/tasks', async (c) => {
   const body = await c.req.json() as {
     workload: string
