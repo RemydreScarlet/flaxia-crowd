@@ -14,8 +14,8 @@ export class TaskQueue extends DurableObject<Env> {
     const url = new URL(request.url);
 
     if (url.pathname === "/complete") {
-      const { taskId, result, nodeId } = await request.json() as { taskId: string; result: unknown; nodeId: string };
-      await this.completeTask(taskId, result, nodeId);
+      const { taskId, result, nodeId, error } = await request.json() as { taskId: string; result: unknown; nodeId: string; error?: string };
+      await this.completeTask(taskId, result, nodeId, error);
       return new Response("OK");
     }
 
@@ -110,12 +110,17 @@ export class TaskQueue extends DurableObject<Env> {
     }));
   }
 
-  private async completeTask(taskId: string, result: unknown, nodeId: string) {
+  private async completeTask(taskId: string, result: unknown, nodeId: string, error?: string) {
     const task = await this.getTask(taskId);
     if (!task) return;
 
-    task.status = 'done';
-    task.result = result;
+    if (error) {
+      task.status = 'failed';
+      task.error = error;
+    } else {
+      task.status = 'done';
+      task.result = result;
+    }
     task.completedAt = Date.now();
     await this.ctx.storage.put(`task:${task.id}`, task);
 

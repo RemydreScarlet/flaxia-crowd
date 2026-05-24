@@ -81,7 +81,8 @@ class SignalingClient {
 }
 
 const startNode = (config: NodeConfig) => {
-  const workerPool = new WorkerPool();
+  const workerUrl = new URL('./worker.js', import.meta.url).href;
+  const workerPool = new WorkerPool(workerUrl);
   let nodeId = localStorage.getItem('flaxia_node_id');
   if (!nodeId) {
     nodeId = crypto.randomUUID();

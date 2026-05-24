@@ -3,15 +3,17 @@ import type { WorkloadType } from "@flaxia/sdk";
 export class WorkerPool {
   private worker: Worker | null = null;
   private defaultTimeoutMs: number;
+  private workerUrl: string;
 
-  constructor(timeoutMs = 30000) {
+  constructor(workerUrl?: string, timeoutMs = 30000) {
+    this.workerUrl = workerUrl || '/worker.js';
     this.defaultTimeoutMs = timeoutMs;
     this.initWorker();
   }
 
   private initWorker() {
     if (typeof Worker === 'undefined') return;
-    this.worker = new Worker('/worker.js', { type: 'module' });
+    this.worker = new Worker(this.workerUrl, { type: 'module' });
   }
 
   run(id: string, workload: WorkloadType, payload: unknown, timeoutMs?: number): Promise<unknown> {
@@ -25,7 +27,7 @@ export class WorkerPool {
       const timeoutId = setTimeout(() => {
         this.cleanupWorker();
         reject(new Error('TIMEOUT'));
-      }, timeoutMs);
+      }, timeout);
 
       const handleMessage = (e: MessageEvent) => {
         const { id: resId, type, result, error } = e.data;

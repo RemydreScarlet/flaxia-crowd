@@ -32,7 +32,7 @@ describe('WorkerPool', () => {
 
     (globalThis as any).Worker = MockWorker as any;
 
-    pool = new WorkerPool(10);
+    pool = new WorkerPool(undefined, 10);
     await expect(pool.run('1', 'ai-inference', {})).rejects.toThrow('TIMEOUT');
   });
 
