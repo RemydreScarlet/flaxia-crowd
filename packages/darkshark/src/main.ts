@@ -1,5 +1,9 @@
+import './index.css';
 import { FlaxiaClient } from '@flaxia/sdk';
 import { initFlaxiaNode } from '@flaxia/node';
+
+const SYSTEM_PROMPT = 'You are DarkShark, a helpful AI assistant running on the decentralized Flaxia Crowd network. You are concise and accurate in your responses.';
+const CHATML_TEMPLATE = '<|im_start|>system\n{{SYSTEM}}<|im_end|>\n{{HISTORY}}<|im_start|>assistant\n';
 
 // Setup dynamic/configurable Orchestrator URL
 const defaultOrchestrator = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -119,6 +123,52 @@ consentTrigger.addEventListener('click', () => {
   }, 1000);
 });
 
+// Conversation history for chat formatting
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+let conversationHistory: ChatMessage[] = [];
+
+function buildChatPrompt(userMessage: string): string {
+  let historyStr = '';
+  for (const msg of conversationHistory) {
+    historyStr += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
+  }
+  historyStr += `<|im_start|>user\n${userMessage}<|im_end|>\n`;
+  return CHATML_TEMPLATE.replace('{{SYSTEM}}', SYSTEM_PROMPT).replace('{{HISTORY}}', historyStr);
+}
+
+// New Chat button
+const newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement | null;
+newChatBtn?.addEventListener('click', () => {
+  conversationHistory = [];
+  chatMessages.innerHTML = '';
+  const welcomeMsg = document.createElement('div');
+  welcomeMsg.className = 'message system';
+  welcomeMsg.innerHTML = '<div class="message-content">Welcome to <strong>DarkShark</strong>. Start a new conversation!</div>';
+  chatMessages.appendChild(welcomeMsg);
+  closeSidebar();
+});
+
+// Sidebar toggle
+const sidebarToggle = document.getElementById('sidebar-toggle') as HTMLButtonElement | null;
+const sidebarClose = document.getElementById('sidebar-close') as HTMLButtonElement | null;
+const sidebar = document.getElementById('sidebar') as HTMLElement | null;
+const sidebarBackdrop = document.getElementById('sidebar-backdrop') as HTMLElement | null;
+
+function openSidebar() {
+  sidebar?.classList.add('open');
+  sidebarBackdrop?.classList.add('open');
+}
+function closeSidebar() {
+  sidebar?.classList.remove('open');
+  sidebarBackdrop?.classList.remove('open');
+}
+sidebarToggle?.addEventListener('click', openSidebar);
+sidebarClose?.addEventListener('click', closeSidebar);
+sidebarBackdrop?.addEventListener('click', closeSidebar);
+
 // Initialize Node UI on Load
 updateNodeUI();
 
@@ -135,15 +185,51 @@ if (localStorage.getItem('flaxia_consent_granted') === 'true') {
   });
 }
 
+function escapeHtml(text: string): string {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+function renderContent(text: string, streaming: boolean): string {
+  const hasThinkOpen = text.includes('<think>');
+  const hasThinkClose = text.includes('</think>');
+
+  if (!hasThinkOpen && !text.includes('<think')) {
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  if (hasThinkOpen && !hasThinkClose) {
+    if (streaming) {
+      const before = escapeHtml(text.split('<think>')[0]).replace(/\n/g, '<br>');
+      return before + '<span class="think-placeholder">Thinking...</span>';
+    }
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  if (!hasThinkOpen && !hasThinkClose) {
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  const before = escapeHtml(text.split('<think>')[0]).replace(/\n/g, '<br>');
+  const match = text.match(/<think>([\s\S]*?)<\/think>/);
+  const thinkContent = match ? match[1] : '';
+  const after = text.split('</think>')[1] || '';
+  const afterHtml = escapeHtml(after).replace(/\n/g, '<br>');
+  const thinkHtml = `<details class="think-block"><summary class="think-summary">Thinking...</summary><div class="think-body">${escapeHtml(thinkContent).replace(/\n/g, '<br>')}</div></details>`;
+
+  return before + thinkHtml + afterHtml;
+}
+
 // Render Chat Messages
 function appendMessage(sender: 'user' | 'assistant' | 'system', content: string): HTMLDivElement {
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
-  
+
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
   contentDiv.innerHTML = content;
-  
+
   messageDiv.appendChild(contentDiv);
   chatMessages.appendChild(messageDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -155,15 +241,15 @@ function appendMessage(sender: 'user' | 'assistant' | 'system', content: string)
 async function typeReply(element: HTMLElement, text: string) {
   element.innerHTML = '';
   let currentText = '';
-  const delay = 15; // ms per character
-  
+  const delay = 8;
+
   for (const char of text) {
     currentText += char;
-    // basic line break parsing
-    element.innerHTML = currentText.replace(/\n/g, '<br>');
+    element.innerHTML = renderContent(currentText, true);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     await new Promise(r => setTimeout(r, delay));
   }
+  element.innerHTML = renderContent(currentText, false);
 }
 
 // Task Visualization Helpers
@@ -233,16 +319,17 @@ chatInputForm.addEventListener('submit', async (e) => {
     // - do_sample: false: greedy decoding (2-5x faster than sampling)
     // - dtype: q4f16: 4-bit quantization
     const device = await detectBestDevice();
+    const chatPrompt = buildChatPrompt(prompt);
     const taskRecord = await client.submit({
       workload: 'ai-inference',
       payload: {
         task: 'text-generation',
         model: 'onnx-community/Qwen3-0.6B-ONNX',
-        input: prompt,
+        input: chatPrompt,
         options: {
           dtype: 'q4f16',
           device,
-          max_new_tokens: 128,
+          max_new_tokens: 512,
           do_sample: false,
         } as any
       }
@@ -257,6 +344,8 @@ chatInputForm.addEventListener('submit', async (e) => {
 
     updateVisualizer('pending', taskId, '-', 0);
     systemMsg.querySelector('.message-content')!.innerHTML = `Task queued. Task ID: <code style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px;">${taskId}</code>`;
+
+    let finalReply = '';
 
     // 2a. Connect streaming WebSocket (primary)
     let streamWs: WebSocket | null = null;
@@ -278,11 +367,12 @@ chatInputForm.addEventListener('submit', async (e) => {
           }
           streamedText += msg.token;
           const contentEl = replyMessage.querySelector('.message-content') as HTMLElement;
-          contentEl.innerHTML = streamedText.replace(/\n/g, '<br>');
+          contentEl.innerHTML = renderContent(streamedText, true);
           chatMessages.scrollTop = chatMessages.scrollHeight;
         } else if (msg.type === 'done') {
           isFinished = true;
           streamWs?.close();
+          finalReply = streamedText;
         } else if (msg.type === 'error') {
           isFinished = true;
           streamWs?.close();
@@ -334,7 +424,7 @@ chatInputForm.addEventListener('submit', async (e) => {
           updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
           systemMsg.remove();
 
-          replyMessage = appendMessage('assistant', 'Generating reply...');
+          replyMessage = appendMessage('assistant', '');
 
           let reply = 'No output returned.';
           const resultPayload = currentTask.result as any;
@@ -342,8 +432,8 @@ chatInputForm.addEventListener('submit', async (e) => {
             const out = resultPayload.output;
             if (Array.isArray(out) && out[0] && typeof out[0].generated_text === 'string') {
               reply = out[0].generated_text;
-              if (reply.startsWith(prompt)) {
-                reply = reply.substring(prompt.length).trim();
+              if (reply.startsWith(chatPrompt)) {
+                reply = reply.substring(chatPrompt.length).trim();
               }
             } else if (typeof out === 'string') {
               reply = out;
@@ -352,10 +442,14 @@ chatInputForm.addEventListener('submit', async (e) => {
             }
           }
 
+          finalReply = reply;
           await typeReply(replyMessage.querySelector('.message-content') as HTMLElement, reply);
         } else {
           isFinished = true;
           streamWs?.close();
+          finalReply = streamedText;
+          const contentEl = replyMessage?.querySelector('.message-content') as HTMLElement;
+          if (contentEl) contentEl.innerHTML = renderContent(streamedText, false);
           updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
         }
       } 
@@ -369,6 +463,11 @@ chatInputForm.addEventListener('submit', async (e) => {
           updateNodeUI();
         }
       }
+    }
+
+    // Push to conversation history after completion
+    if (finalReply) {
+      conversationHistory.push({ role: 'assistant', content: finalReply });
     }
 
   } catch (error: any) {
