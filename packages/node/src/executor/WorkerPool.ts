@@ -5,7 +5,7 @@ export class WorkerPool {
   private defaultTimeoutMs: number;
   private workerUrl: string;
 
-  constructor(workerUrl?: string, timeoutMs = 30000) {
+  constructor(workerUrl?: string, timeoutMs = 120000) {
     this.workerUrl = workerUrl || '/worker.js';
     this.defaultTimeoutMs = timeoutMs;
     this.initWorker();
@@ -38,6 +38,15 @@ export class WorkerPool {
       const handleMessage = (e: MessageEvent) => {
         const { id: resId, type, result, error, token } = e.data;
         if (resId !== id) return;
+
+        if (type === 'heartbeat') {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            this.cleanupWorker();
+            reject(new Error('TIMEOUT'));
+          }, timeout);
+          return;
+        }
 
         if (type === 'token') {
           onToken?.(token);

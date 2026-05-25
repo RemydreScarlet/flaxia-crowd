@@ -77,6 +77,10 @@ export class NodeManager extends DurableObject<Env> {
   }
 
   async registerNode(ws: WebSocket, nodeId: string, capabilities: WorkloadType[]) {
+    for (const sock of this.ctx.getWebSockets(nodeId)) {
+      try { sock.close(); } catch {}
+    }
+
     console.log(`[NodeManager] registerNode: ${nodeId}`, { capabilities });
     this.ctx.acceptWebSocket(ws, [nodeId]);
 
@@ -147,19 +151,33 @@ export class NodeManager extends DurableObject<Env> {
       .filter((n): n is NodeRecord =>
         !!n && n.capabilities.includes(workload)
       )
+      .filter(n => this.ctx.getWebSockets(n.id).length > 0)
       .sort((a, b) => a.cpuLoad - b.cpuLoad || a.connectedAt - b.connectedAt);
 
     console.log(`[NodeManager] pickNode candidates for ${workload}:`, candidates.map(n => n.id));
-    console.log(`[NodeManager] pickNode WebSocket check - ${candidates[0]?.id}: ws=${candidates[0] ? this.ctx.getWebSockets(candidates[0].id).length : 'N/A'}`);
 
     return candidates[0]?.id;
   }
 
   async assignTask(nodeId: string, task: TaskRecord): Promise<void> {
     console.log(`[NodeManager] assignTask: node=${nodeId}, task=${task.id}`);
-    const ws = this.ctx.getWebSockets(nodeId)[0];
-    if (!ws) throw new Error(`WebSocket for node ${nodeId} not found`);
-    console.log(`[NodeManager] assignTask: sending to ws...`);
+
+    const sockets = this.ctx.getWebSockets(nodeId);
+    let ws: WebSocket | undefined;
+    for (const sock of sockets) {
+      try {
+        sock.send(JSON.stringify({
+          type: 'task',
+          taskId: task.id,
+          workload: task.workload,
+          payload: task.payload
+        }));
+        ws = sock;
+        break;
+      } catch {}
+    }
+    if (!ws) throw new Error(`No open WebSocket for node ${nodeId}`);
+    console.log(`[NodeManager] assignTask: sent to ws...`);
 
     const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
     if (node) {
@@ -170,13 +188,6 @@ export class NodeManager extends DurableObject<Env> {
       const idleNodes = await this.getIdleNodes();
       await this.ctx.storage.put("nodes:idle", idleNodes.filter(id => id !== nodeId));
     }
-
-    ws.send(JSON.stringify({
-      type: 'task',
-      taskId: task.id,
-      workload: task.workload,
-      payload: task.payload
-    }));
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
@@ -273,10 +284,26 @@ export class NodeManager extends DurableObject<Env> {
   async webSocketClose(ws: WebSocket) {
     const tags = this.ctx.getTags(ws);
     const tag = tags[0];
-    if (tag?.startsWith('client:')) {
+    if (tag?.startsWith('client:')) return;
+    console.log(`[NodeManager] webSocketClose: node=${tag}`);
+
+    const otherSockets = this.ctx.getWebSockets(tag).filter(s => s !== ws);
+    if (otherSockets.length > 0) {
+      console.log(`[NodeManager] webSocketClose: ${otherSockets.length} other socket(s) remain, skipping unregister`);
       return;
     }
-    console.log(`[NodeManager] webSocketClose: node=${tag}`);
+
+    const node = await this.ctx.storage.get<NodeRecord>(`node:${tag}`);
+    if (node?.currentTaskId) {
+      console.log(`[NodeManager] webSocketClose: re-queuing task ${node.currentTaskId}`);
+      const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
+      const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
+      await taskQueue.fetch(new Request("http://internal/requeue", {
+        method: "POST",
+        body: JSON.stringify({ taskId: node.currentTaskId, nodeId: tag, error: "Node disconnected" })
+      }));
+    }
+
     await this.unregisterNode(tag);
   }
 

@@ -7,7 +7,11 @@ const defaultOrchestrator = window.location.hostname === 'localhost' || window.l
   : 'https://flaxia-worker.remydre8.workers.dev';
 
 const savedOrchestrator = localStorage.getItem('flaxia_orchestrator_url');
-const orchestratorUrl = savedOrchestrator || defaultOrchestrator;
+const displayOrchestratorUrl = savedOrchestrator || defaultOrchestrator;
+// On localhost with the default orchestrator, use the Vite proxy (same origin)
+// to avoid CORS/COEP issues with cross-origin isolation
+const useViteProxy = !savedOrchestrator && window.location.hostname === 'localhost';
+const orchestratorUrl = useViteProxy ? window.location.origin : displayOrchestratorUrl;
 
 const client = new FlaxiaClient({
   apiKey: 'fc_live_darkshark_example_key',
@@ -32,7 +36,7 @@ const orchestratorUrlInput = document.getElementById('orchestrator-url-input') a
 const saveSettingsBtn = document.getElementById('save-settings-btn') as HTMLButtonElement | null;
 
 if (orchestratorUrlInput) {
-  orchestratorUrlInput.value = orchestratorUrl;
+  orchestratorUrlInput.value = displayOrchestratorUrl;
 }
 
 if (saveSettingsBtn && orchestratorUrlInput) {
@@ -86,7 +90,7 @@ async function detectBestDevice(): Promise<string> {
   if (navigator.gpu) {
     try {
       const adapter = await navigator.gpu.requestAdapter();
-      if (adapter) return 'webgpu';
+      if (adapter?.features.has('shader-f16')) return 'webgpu';
     } catch {}
   }
   return 'wasm';
@@ -254,12 +258,14 @@ chatInputForm.addEventListener('submit', async (e) => {
     updateVisualizer('pending', taskId, '-', 0);
     systemMsg.querySelector('.message-content')!.innerHTML = `Task queued. Task ID: <code style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px;">${taskId}</code>`;
 
-    // 2a. Connect streaming WebSocket
+    // 2a. Connect streaming WebSocket (primary)
     let streamWs: WebSocket | null = null;
     let replyMessage: HTMLDivElement | null = null;
+    let wsActive = false;
     try {
       const wsUrl = orchestratorUrl.replace('http', 'ws');
       streamWs = new WebSocket(`${wsUrl}/crowd/subscribe?taskId=${taskId}`);
+      streamWs.onopen = () => { wsActive = true; };
       streamWs.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'subscribed') {
@@ -288,18 +294,33 @@ chatInputForm.addEventListener('submit', async (e) => {
           }
         }
       };
-      streamWs.onerror = () => console.log('[Stream] WebSocket error, falling back to polling');
+      streamWs.onerror = () => {
+        wsActive = false;
+        console.log('[Stream] WebSocket error, falling back to polling');
+      };
     } catch {
       console.log('[Stream] Could not connect, falling back to polling');
     }
 
-    // 2b. Poll orchestrator for completion (fallback + final status)
+    // 2b. Poll orchestrator (fallback: only used when WS is unavailable)
     while (!isFinished) {
-      await new Promise(r => setTimeout(r, pollInterval));
-      
-      const currentTask = await client.getTask(taskId);
+      await new Promise(r => setTimeout(r, wsActive ? 5000 : 1000));
+
       const elapsed = (Date.now() - startTime) / 1000;
       const idleSinceLastToken = (Date.now() - lastActivityTime) / 1000;
+
+      if (idleSinceLastToken > 90) {
+        isFinished = true;
+        streamWs?.close();
+        updateVisualizer('failed', taskId);
+        systemMsg.querySelector('.message-content')!.innerHTML = 'Task execution timed out after 90 seconds.';
+        updateNodeUI();
+        break;
+      }
+
+      if (wsActive) continue;
+
+      const currentTask = await client.getTask(taskId);
 
       if (currentTask.status === 'processing') {
         updateVisualizer('processing', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
@@ -347,14 +368,6 @@ chatInputForm.addEventListener('submit', async (e) => {
           systemMsg.querySelector('.message-content')!.innerHTML = `Task failed: <span style="color: #ff3366;">${currentTask.error || 'Unknown Error'}</span>`;
           updateNodeUI();
         }
-      }
-
-      if (idleSinceLastToken > 90) {
-        isFinished = true;
-        streamWs?.close();
-        updateVisualizer('failed', taskId);
-        systemMsg.querySelector('.message-content')!.innerHTML = 'Task execution timed out after 90 seconds.';
-        updateNodeUI();
       }
     }
 

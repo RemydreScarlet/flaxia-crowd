@@ -26,21 +26,29 @@ class SignalingClient {
   connect() {
     if (this.destroyed) return;
 
+    if (this.ws) {
+      const old = this.ws;
+      old.onclose = null;
+      try { old.close(); } catch {}
+      this.ws = null;
+    }
+
     const capabilities: WorkloadType[] = ['ai-inference', 'image-process'];
     const wsUrl = new URL(`${this.config.orchestratorUrl.replace('http', 'ws')}/crowd/signal`);
     wsUrl.searchParams.set('nodeId', this.nodeId);
     wsUrl.searchParams.set('capabilities', capabilities.join(','));
 
-    this.ws = new WebSocket(wsUrl.toString());
+    const ws = new WebSocket(wsUrl.toString());
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
       this.reconnectAttempts = 0;
     };
 
-    this.ws.onmessage = async (event) => {
+    ws.onmessage = async (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'ping') {
-        this.ws?.send(JSON.stringify({ type: 'pong', cpuLoad: 0.1 }));
+        ws.send(JSON.stringify({ type: 'pong', cpuLoad: 0.1 }));
         return;
       }
       if (data.type === 'task') {
@@ -48,7 +56,9 @@ class SignalingClient {
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      ws.onclose = null;
+      if (this.ws !== ws) return;
       this.ws = null;
       if (this.destroyed) return;
 
@@ -62,7 +72,7 @@ class SignalingClient {
 
   disconnect() {
     this.destroyed = true;
-    this.ws?.close();
+    try { this.ws?.close(); } catch {}
     this.ws = null;
   }
 
@@ -86,7 +96,14 @@ class SignalingClient {
   }
 }
 
+const WINDOW_KEY = '__flaxia_node_signal_client';
+
 const startNode = (config: NodeConfig) => {
+  const prev: SignalingClient | undefined = (window as any)[WINDOW_KEY];
+  if (prev) {
+    prev.disconnect();
+  }
+
   const workerUrl = new URL('./worker.js', import.meta.url).href;
   const workerPool = new WorkerPool(workerUrl);
   let nodeId = localStorage.getItem('flaxia_node_id');
@@ -96,6 +113,7 @@ const startNode = (config: NodeConfig) => {
   }
 
   const client = new SignalingClient(config, workerPool, nodeId);
+  (window as any)[WINDOW_KEY] = client;
   client.connect();
 };
 

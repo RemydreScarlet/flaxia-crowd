@@ -8,6 +8,17 @@ export default defineConfig({
     fs: {
       allow: ['..'],
     },
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+    proxy: {
+      '/crowd': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
   build: {
     outDir: 'dist',

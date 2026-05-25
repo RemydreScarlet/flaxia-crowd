@@ -29,6 +29,8 @@ export interface AiInferenceOptions {
   tokenBuffer?: boolean;
   /** Token buffer flush interval in ms (default: 50) */
   tokenBufferIntervalMs?: number;
+  /** Number of threads for WASM backend (requires crossOriginIsolated, default: hardwareConcurrency) */
+  numThreads?: number;
 }
 
 export interface AiInferencePayload {

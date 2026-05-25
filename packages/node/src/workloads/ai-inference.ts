@@ -1,4 +1,4 @@
-import { pipeline, TextStreamer } from '@huggingface/transformers';
+import { env, pipeline, TextStreamer } from '@huggingface/transformers';
 import type { AiInferencePayload, AiInferenceResult, AiInferenceOptions } from '@flaxia/sdk';
 
 const SUPPORTED_TASKS = [
@@ -47,6 +47,13 @@ export const handleAiInference = async (
 
   if (!SUPPORTED_TASKS.includes(task as any)) {
     throw new Error(`Invalid or unsupported task: ${task}. Supported tasks are: ${SUPPORTED_TASKS.join(', ')}`);
+  }
+
+  if (self.crossOriginIsolated) {
+    const numThreads = options.numThreads ?? navigator.hardwareConcurrency;
+    if (env.backends.onnx?.wasm) {
+      env.backends.onnx.wasm.numThreads = Math.max(1, Math.min(numThreads, navigator.hardwareConcurrency || 4));
+    }
   }
 
   const cacheKey = `${task}:${model}`;

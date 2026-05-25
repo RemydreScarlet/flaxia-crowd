@@ -3,6 +3,10 @@ import type { WorkloadType } from '@flaxia/sdk';
 self.onmessage = async (e: MessageEvent) => {
   const { id, workload, payload } = e.data;
 
+  const heartbeat = setInterval(() => {
+    self.postMessage({ id, type: 'heartbeat' });
+  }, 10000);
+
   try {
     let result;
     const emitToken = (token: string) => {
@@ -25,8 +29,10 @@ self.onmessage = async (e: MessageEvent) => {
         throw new Error(`Unknown workload type: ${workload}`);
     }
 
+    clearInterval(heartbeat);
     self.postMessage({ id, type: 'done', result });
   } catch (err) {
+    clearInterval(heartbeat);
     self.postMessage({ id, type: 'error', error: err instanceof Error ? err.message : String(err) });
   }
 };

@@ -24,6 +24,12 @@ export class TaskQueue extends DurableObject<Env> {
       return new Response("OK");
     }
 
+    if (url.pathname === "/requeue") {
+      const { taskId, nodeId, error } = await request.json() as { taskId: string; nodeId: string; error?: string };
+      await this.requeueTask(taskId, nodeId, error);
+      return new Response("OK");
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 
@@ -68,21 +74,25 @@ export class TaskQueue extends DurableObject<Env> {
     const nodeManager = this.env.NODE_MANAGER.get(nodeManagerId);
 
     for (const taskId of [...pendingIds]) {
-      const task = await this.getTask(taskId);
-      if (!task || task.status !== 'pending') continue;
+      try {
+        const task = await this.getTask(taskId);
+        if (!task || task.status !== 'pending') continue;
 
-      console.log(`[TaskQueue] picking node for task ${taskId} (workload=${task.workload})`);
-      const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`));
-      const respBody = await nodeResponse.text();
-      console.log(`[TaskQueue] pick response: status=${nodeResponse.status}, body=${respBody}`);
-      if (nodeResponse.status === 200) {
-        const { nodeId } = JSON.parse(respBody) as { nodeId: string | null };
-        if (nodeId) {
-          console.log(`[TaskQueue] assigned task ${taskId} to node ${nodeId}`);
-          await this.assignTask(task, nodeId);
-        } else {
-          console.log(`[TaskQueue] no node available for task ${taskId}`);
+        console.log(`[TaskQueue] picking node for task ${taskId} (workload=${task.workload})`);
+        const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`));
+        const respBody = await nodeResponse.text();
+        console.log(`[TaskQueue] pick response: status=${nodeResponse.status}, body=${respBody}`);
+        if (nodeResponse.status === 200) {
+          const { nodeId } = JSON.parse(respBody) as { nodeId: string | null };
+          if (nodeId) {
+            console.log(`[TaskQueue] assigned task ${taskId} to node ${nodeId}`);
+            await this.assignTask(task, nodeId);
+          } else {
+            console.log(`[TaskQueue] no node available for task ${taskId}`);
+          }
         }
+      } catch (err) {
+        console.error(`[TaskQueue] error assigning task ${taskId}:`, err);
       }
     }
   }
@@ -128,6 +138,35 @@ export class TaskQueue extends DurableObject<Env> {
     this.cacheProcessing = processing.filter(id => id !== taskId);
     await this.ctx.storage.put("queue:processing", this.cacheProcessing);
 
+    await this.tryAssignAll();
+  }
+
+  private async requeueTask(taskId: string, nodeId: string, error?: string) {
+    const task = await this.getTask(taskId);
+    if (!task || task.status !== 'processing') return;
+
+    const processing = await this.getProcessing();
+    this.cacheProcessing = processing.filter(id => id !== taskId);
+    await this.ctx.storage.put("queue:processing", this.cacheProcessing);
+
+    task.retryCount++;
+    if (task.retryCount >= 3) {
+      task.status = 'failed';
+      task.error = error || 'Max retries exceeded';
+      await this.ctx.storage.put(`task:${task.id}`, task);
+    } else {
+      task.status = 'pending';
+      delete task.assignedNodeId;
+      delete task.assignedAt;
+      await this.ctx.storage.put(`task:${task.id}`, task);
+
+      const pending = await this.getPending();
+      this.cachePending = pending;
+      this.cachePending.push(taskId);
+      await this.ctx.storage.put("queue:pending", this.cachePending);
+    }
+
+    this.invalidateCache();
     await this.tryAssignAll();
   }
 
