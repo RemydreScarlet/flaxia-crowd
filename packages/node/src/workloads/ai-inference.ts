@@ -1,5 +1,5 @@
 import { pipeline, TextStreamer } from '@huggingface/transformers';
-import type { AiInferencePayload, AiInferenceResult } from '@flaxia/sdk';
+import type { AiInferencePayload, AiInferenceResult, AiInferenceOptions } from '@flaxia/sdk';
 
 const SUPPORTED_TASKS = [
   'text-classification', 'token-classification', 'question-answering', 'fill-mask',
@@ -13,11 +13,37 @@ const SUPPORTED_TASKS = [
 
 const pipelineCache = new Map<string, any>();
 
+const createBufferedTokenCallback = (
+  onToken: (token: string) => void,
+  options: AiInferenceOptions,
+): ((text: string) => void) => {
+  if (!options.tokenBuffer) return onToken;
+
+  let buffer = '';
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const interval = options.tokenBufferIntervalMs ?? 50;
+
+  const flush = () => {
+    if (buffer) {
+      onToken(buffer);
+      buffer = '';
+    }
+    timer = null;
+  };
+
+  return (text: string) => {
+    buffer += text;
+    if (!timer) {
+      timer = setTimeout(flush, interval);
+    }
+  };
+};
+
 export const handleAiInference = async (
   payload: AiInferencePayload,
   onToken?: (token: string) => void,
 ): Promise<AiInferenceResult> => {
-  const { task, model, input } = payload;
+  const { task, model, input, options = {} } = payload;
 
   if (!SUPPORTED_TASKS.includes(task as any)) {
     throw new Error(`Invalid or unsupported task: ${task}. Supported tasks are: ${SUPPORTED_TASKS.join(', ')}`);
@@ -26,21 +52,39 @@ export const handleAiInference = async (
   const cacheKey = `${task}:${model}`;
   let generator = pipelineCache.get(cacheKey);
   if (!generator) {
-    generator = await pipeline(task as any, model, { dtype: (payload.options?.dtype as any) || 'q4f16' });
+    const pipelineOpts: Record<string, unknown> = {
+      dtype: options.dtype ?? 'q4f16',
+      device: options.device,
+    };
+    try {
+      generator = await pipeline(task as any, model, pipelineOpts);
+    } catch (err) {
+      if (options.device && options.device !== 'wasm') {
+        console.warn(`[AiInference] ${options.device} failed, falling back to wasm:`, err);
+        pipelineOpts.device = 'wasm';
+        generator = await pipeline(task as any, model, pipelineOpts);
+      } else {
+        throw err;
+      }
+    }
     pipelineCache.set(cacheKey, generator);
   }
 
   const genOptions: Record<string, unknown> = {
-    max_new_tokens: (payload.options?.max_new_tokens as number) || 128,
+    max_new_tokens: options.max_new_tokens ?? 128,
+    do_sample: options.do_sample ?? false,
   };
+
+  if (options.temperature != null) genOptions.temperature = options.temperature;
+  if (options.top_p != null) genOptions.top_p = options.top_p;
+  if (options.top_k != null) genOptions.top_k = options.top_k;
+  if (options.repetition_penalty != null) genOptions.repetition_penalty = options.repetition_penalty;
 
   if (onToken && generator.tokenizer) {
     const streamer = new TextStreamer(generator.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,
-      callback_function: (text: string) => {
-        onToken(text);
-      },
+      callback_function: createBufferedTokenCallback(onToken, options),
     });
     genOptions.streamer = streamer;
   }

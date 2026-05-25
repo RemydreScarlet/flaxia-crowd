@@ -81,6 +81,17 @@ function updateNodeUI() {
   }
 }
 
+// WebGPU detection for optimal inference device
+async function detectBestDevice(): Promise<string> {
+  if (navigator.gpu) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) return 'webgpu';
+    } catch {}
+  }
+  return 'wasm';
+}
+
 // Start Node Service on Consent Click
 consentTrigger.addEventListener('click', () => {
   initFlaxiaNode({
@@ -213,7 +224,11 @@ chatInputForm.addEventListener('submit', async (e) => {
     updateVisualizer('pending', 'Submitting...');
 
     // 1. Submit task to Worker Orchestrator via SDK Client
-    // Using onnx-community/Qwen3-0.6B-ONNX model with dtype: q4f16 as requested
+    // Using onnx-community/Qwen3-0.6B-ONNX model with optimizations:
+    // - webgpu/wasm: auto-detect best available device
+    // - do_sample: false: greedy decoding (2-5x faster than sampling)
+    // - dtype: q4f16: 4-bit quantization
+    const device = await detectBestDevice();
     const taskRecord = await client.submit({
       workload: 'ai-inference',
       payload: {
@@ -222,8 +237,10 @@ chatInputForm.addEventListener('submit', async (e) => {
         input: prompt,
         options: {
           dtype: 'q4f16',
-          max_new_tokens: 128
-        }
+          device,
+          max_new_tokens: 128,
+          do_sample: false,
+        } as any
       }
     });
 

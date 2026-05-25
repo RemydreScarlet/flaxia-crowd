@@ -1,15 +1,26 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleAiInference } from '../ai-inference';
 
+const mockGenerate = vi.fn().mockResolvedValue([{ label: 'POSITIVE', score: 0.99 }]);
+const mockPipeline = vi.fn();
+
 vi.mock('@huggingface/transformers', () => {
-  const gen = Object.assign(
-    vi.fn().mockResolvedValue([{ label: 'POSITIVE', score: 0.99 }]),
-    { tokenizer: {} },
-  );
   return {
-    pipeline: vi.fn().mockResolvedValue(gen),
-    TextStreamer: class { constructor() {} },
+    pipeline: (...args: any[]) => mockPipeline(...args),
+    TextStreamer: class {
+      constructor(
+        public tokenizer: any,
+        public config: { callback_function: (text: string) => void },
+      ) {}
+    },
   };
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockPipeline.mockReset();
+  const gen = Object.assign(mockGenerate, { tokenizer: { decode: vi.fn() } });
+  mockPipeline.mockResolvedValue(gen);
 });
 
 describe('AI Inference Workload', () => {
@@ -18,7 +29,7 @@ describe('AI Inference Workload', () => {
       task: 'text-classification',
       model: 'Xenova/distilbert-base-uncased-finetuned-sst-2-english',
       input: 'I love this service!',
-      options: { quantized: true }
+      options: { dtype: 'q4f16' }
     };
 
     const result = await handleAiInference(payload);
@@ -85,5 +96,65 @@ describe('AI Inference Workload', () => {
       expect(e.message).toContain('unsupported task');
       expect(e.message).toContain('text-classification');
     }
+  });
+
+  it('should pass device option to pipeline', async () => {
+    const payload = {
+      task: 'text-generation',
+      model: 'test-model-device-opt',
+      input: 'hello',
+      options: { device: 'webgpu' }
+    };
+
+    await handleAiInference(payload);
+
+    expect(mockPipeline).toHaveBeenCalledWith(
+      'text-generation',
+      'test-model-device-opt',
+      expect.objectContaining({ device: 'webgpu' }),
+    );
+  });
+
+  it('should set do_sample: false by default for greedy decoding', async () => {
+    const payload = {
+      task: 'text-generation',
+      model: 'test-model-greedy',
+      input: 'hello',
+    };
+
+    await handleAiInference(payload);
+
+    expect(mockGenerate).toHaveBeenCalledWith(
+      'hello',
+      expect.objectContaining({ do_sample: false }),
+    );
+  });
+
+  it('should pass generation options when specified', async () => {
+    const payload = {
+      task: 'text-generation',
+      model: 'test-model-gen-opts',
+      input: 'hello',
+      options: {
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 50,
+        repetition_penalty: 1.1,
+        do_sample: true,
+      }
+    };
+
+    await handleAiInference(payload);
+
+    expect(mockGenerate).toHaveBeenCalledWith(
+      'hello',
+      expect.objectContaining({
+        do_sample: true,
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 50,
+        repetition_penalty: 1.1,
+      }),
+    );
   });
 });

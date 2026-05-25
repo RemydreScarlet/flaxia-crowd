@@ -8,6 +8,29 @@ export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | '
 
 // --- AI Inference ---
 
+export interface AiInferenceOptions {
+  /** Quantization dtype: 'q4f16' (default) | 'q8' | 'fp32' | 'q4' */
+  dtype?: string;
+  /** Execution device: 'wasm' (default) | 'webgpu' | 'cpu' */
+  device?: string;
+  /** Maximum number of tokens to generate (default: 128) */
+  max_new_tokens?: number;
+  /** Whether to sample (default: false = greedy decoding, faster) */
+  do_sample?: boolean;
+  /** Temperature for sampling (requires do_sample: true) */
+  temperature?: number;
+  /** Top-p nucleus sampling threshold */
+  top_p?: number;
+  /** Top-k sampling */
+  top_k?: number;
+  /** Repetition penalty */
+  repetition_penalty?: number;
+  /** Buffer tokens and flush in batches (reduces network overhead, default: false) */
+  tokenBuffer?: boolean;
+  /** Token buffer flush interval in ms (default: 50) */
+  tokenBufferIntervalMs?: number;
+}
+
 export interface AiInferencePayload {
   /**
    * Transformer.js pipeline task name (e.g. 'text-classification')
@@ -19,8 +42,8 @@ export interface AiInferencePayload {
   model: string;
   /** Text input (single or array) */
   input: string | string[];
-  /** pipeline() options */
-  options?: Record<string, unknown>;
+  /** pipeline() and generation options */
+  options?: AiInferenceOptions;
 }
 
 export interface AiInferenceResult {
