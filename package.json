@@ -8,6 +8,7 @@
     "build": "npm run build --workspaces",
     "dev:worker": "npm run dev --workspace=packages/worker",
     "dev:node": "npm run dev --workspace=packages/node",
-    "dev:darkshark": "npm run dev --workspace=packages/darkshark"
+    "dev:darkshark": "npm run dev --workspace=packages/darkshark",
+    "dev:text-analyzer": "npm run dev --workspace=packages/text-analyzer"
   }
 }

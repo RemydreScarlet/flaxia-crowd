@@ -1,0 +1,435 @@
+import './index.css';
+import { FlaxiaClient } from '@flaxia/sdk';
+import { initFlaxiaNode } from '@flaxia/node';
+
+const LABELS = ['1 star', '2 stars', '3 stars', '4 stars', '5 stars'] as readonly string[];
+const SENTIMENT_NAMES = ['Very Negative', 'Negative', 'Neutral', 'Positive', 'Very Positive'];
+
+interface SentimentResult {
+  label: string;
+  score: number;
+}
+
+interface HistoryEntry {
+  text: string;
+  label: string;
+  score: number;
+}
+
+const defaultOrchestrator = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8787'
+  : 'https://flaxia-worker.remydre8.workers.dev';
+
+const savedOrchestrator = localStorage.getItem('flaxia_orchestrator_url');
+const displayOrchestratorUrl = savedOrchestrator || defaultOrchestrator;
+const useViteProxy = !savedOrchestrator && window.location.hostname === 'localhost';
+const orchestratorUrl = useViteProxy ? window.location.origin : displayOrchestratorUrl;
+
+const client = new FlaxiaClient({
+  apiKey: 'fc_live_textanalyzer_example_key',
+  baseUrl: `${orchestratorUrl}/crowd`
+});
+
+// UI Elements
+const analysisInput = document.getElementById('analysis-input') as HTMLTextAreaElement;
+const analyzeBtn = document.getElementById('analyze-btn') as HTMLButtonElement;
+const resultsSection = document.getElementById('results-section') as HTMLDivElement;
+const resultBadge = document.getElementById('result-badge') as HTMLSpanElement;
+const scoreBars = document.getElementById('score-bars') as HTMLDivElement;
+const resultText = document.getElementById('result-text') as HTMLDivElement;
+const historyList = document.getElementById('history-list') as HTMLDivElement;
+const clearHistoryBtn = document.getElementById('clear-history-btn') as HTMLButtonElement;
+const newAnalysisBtn = document.getElementById('new-analysis-btn') as HTMLButtonElement;
+
+// Sidebar Elements
+const nodeDot = document.getElementById('node-dot') as HTMLSpanElement;
+const nodeStatusText = document.getElementById('node-status-text') as HTMLSpanElement;
+const nodeIdVal = document.getElementById('node-id-val') as HTMLSpanElement;
+const nodeActivityVal = document.getElementById('node-activity-val') as HTMLSpanElement;
+const consentTrigger = document.getElementById('consent-trigger') as HTMLButtonElement;
+const orchestratorUrlInput = document.getElementById('orchestrator-url-input') as HTMLInputElement | null;
+const saveSettingsBtn = document.getElementById('save-settings-btn') as HTMLButtonElement | null;
+const stepPending = document.getElementById('step-pending') as HTMLDivElement;
+const stepProcessing = document.getElementById('step-processing') as HTMLDivElement;
+const stepDone = document.getElementById('step-done') as HTMLDivElement;
+const taskMetaInfo = document.getElementById('task-meta-info') as HTMLDivElement;
+const taskIdVal = document.getElementById('task-id-val') as HTMLSpanElement;
+const taskNodeVal = document.getElementById('task-node-val') as HTMLSpanElement;
+const taskTimeVal = document.getElementById('task-time-val') as HTMLSpanElement;
+
+// Sidebar toggle
+const sidebarToggle = document.getElementById('sidebar-toggle') as HTMLButtonElement | null;
+const sidebarClose = document.getElementById('sidebar-close') as HTMLButtonElement | null;
+const sidebar = document.getElementById('sidebar') as HTMLElement | null;
+const sidebarBackdrop = document.getElementById('sidebar-backdrop') as HTMLElement | null;
+
+function openSidebar() {
+  sidebar?.classList.add('open');
+  sidebarBackdrop?.classList.add('open');
+}
+function closeSidebar() {
+  sidebar?.classList.remove('open');
+  sidebarBackdrop?.classList.remove('open');
+}
+sidebarToggle?.addEventListener('click', openSidebar);
+sidebarClose?.addEventListener('click', closeSidebar);
+sidebarBackdrop?.addEventListener('click', closeSidebar);
+
+// Orchestrator URL settings
+if (orchestratorUrlInput) {
+  orchestratorUrlInput.value = displayOrchestratorUrl;
+}
+if (saveSettingsBtn && orchestratorUrlInput) {
+  saveSettingsBtn.addEventListener('click', () => {
+    const nextUrl = orchestratorUrlInput.value.trim();
+    if (nextUrl) {
+      localStorage.setItem('flaxia_orchestrator_url', nextUrl);
+      window.location.reload();
+    }
+  });
+}
+
+// Node UI
+function updateNodeUI() {
+  const consentGranted = localStorage.getItem('flaxia_consent_granted') === 'true';
+  const nodeId = localStorage.getItem('flaxia_node_id');
+
+  if (consentGranted && nodeId) {
+    nodeDot.className = 'dot connected';
+    nodeStatusText.innerText = 'Connected to Network';
+    nodeIdVal.innerText = nodeId;
+    nodeIdVal.title = nodeId;
+    nodeActivityVal.innerText = 'Idle / Waiting';
+    consentTrigger.style.display = 'none';
+  } else {
+    nodeDot.className = 'dot disconnected';
+    nodeStatusText.innerText = 'Inactive';
+    nodeIdVal.innerText = '-';
+    nodeActivityVal.innerText = '-';
+    consentTrigger.style.display = 'block';
+  }
+}
+
+consentTrigger.addEventListener('click', () => {
+  initFlaxiaNode({
+    orchestratorUrl,
+    siteId: 'textanalyzer-example',
+    consent: {
+      brandName: 'TextAnalyzer Node',
+      position: 'bottom-right',
+      accentColor: '#7c3aed'
+    }
+  });
+
+  let attempts = 0;
+  const interval = setInterval(() => {
+    updateNodeUI();
+    attempts++;
+    if (attempts > 30 || localStorage.getItem('flaxia_node_id')) {
+      clearInterval(interval);
+    }
+  }, 1000);
+});
+
+updateNodeUI();
+
+if (localStorage.getItem('flaxia_consent_granted') === 'true') {
+  initFlaxiaNode({
+    orchestratorUrl,
+    siteId: 'textanalyzer-example',
+    consent: {
+      brandName: 'TextAnalyzer Node',
+      position: 'bottom-right',
+      accentColor: '#7c3aed'
+    }
+  });
+}
+
+// Task Visualizer
+function resetVisualizer() {
+  stepPending.className = 'step';
+  stepProcessing.className = 'step';
+  stepDone.className = 'step';
+  taskMetaInfo.style.display = 'none';
+}
+
+function updateVisualizer(status: 'pending' | 'processing' | 'done' | 'failed', taskId: string, nodeId = '-', elapsedSec = 0) {
+  resetVisualizer();
+  taskMetaInfo.style.display = 'block';
+  taskIdVal.innerText = taskId;
+  taskNodeVal.innerText = nodeId;
+  taskTimeVal.innerText = `${elapsedSec.toFixed(1)}s`;
+
+  if (status === 'pending') {
+    stepPending.className = 'step active';
+  } else if (status === 'processing') {
+    stepPending.className = 'step complete';
+    stepProcessing.className = 'step active';
+    const localNodeId = localStorage.getItem('flaxia_node_id');
+    if (localNodeId && nodeId === localNodeId) {
+      nodeDot.className = 'dot busy';
+      nodeActivityVal.innerText = 'Analyzing Text';
+    }
+  } else if (status === 'done') {
+    stepPending.className = 'step complete';
+    stepProcessing.className = 'step complete';
+    stepDone.className = 'step active';
+    updateNodeUI();
+  } else if (status === 'failed') {
+    stepPending.className = 'step';
+    stepProcessing.className = 'step';
+    stepDone.className = 'step';
+    updateNodeUI();
+  }
+}
+
+// Scoring
+const SCORE_CLASSES = ['very-negative', 'negative', 'neutral', 'positive', 'very-positive'];
+
+function getLabelIndex(label: string): number {
+  const lower = label.toLowerCase().trim();
+  const starMatch = lower.match(/^(\d+)\s*star/);
+  if (starMatch) {
+    const n = parseInt(starMatch[1], 10);
+    if (n >= 1 && n <= 5) return n - 1;
+  }
+  for (let i = 0; i < 5; i++) {
+    if (lower === SENTIMENT_NAMES[i].toLowerCase()) return i;
+    if (lower === LABELS[i].toLowerCase()) return i;
+  }
+  if (lower.includes('very') && lower.includes('negative')) return 0;
+  if (lower.includes('very') && lower.includes('positive')) return 4;
+  if (lower.includes('negative')) return 1;
+  if (lower.includes('positive')) return 3;
+  if (lower.includes('neutral')) return 2;
+  return 2;
+}
+
+function getScoreClass(label: string): string {
+  return SCORE_CLASSES[getLabelIndex(label)] || 'neutral';
+}
+
+function getBadgeClass(label: string): string {
+  return 'result-badge ' + (SCORE_CLASSES[getLabelIndex(label)] || 'neutral');
+}
+
+function renderScores(results: SentimentResult[], topLabel: string, topScore: number, elapsedSec: number) {
+  const scoreMap = new Map<string, number>();
+  for (const r of results) {
+    const idx = getLabelIndex(r.label);
+    scoreMap.set(LABELS[idx], r.score);
+  }
+
+  const rows = scoreBars.querySelectorAll('.score-row');
+  for (const row of rows) {
+    const dataLabel = row.getAttribute('data-label') || '';
+    const idx = getLabelIndex(dataLabel);
+    const score = scoreMap.get(LABELS[idx]) || 0;
+    const fill = row.querySelector('.score-fill') as HTMLElement;
+    const value = row.querySelector('.score-value') as HTMLElement;
+    const pct = (score * 100).toFixed(1);
+    fill.style.width = `${score * 100}%`;
+    value.textContent = `${pct}%`;
+  }
+
+  const topIdx = getLabelIndex(topLabel);
+  resultBadge.className = getBadgeClass(topLabel);
+  resultBadge.textContent = SENTIMENT_NAMES[topIdx];
+
+  resultText.textContent = `判定: ${SENTIMENT_NAMES[topIdx]} (${(topScore * 100).toFixed(1)}%) • ${elapsedSec.toFixed(1)}s`;
+  resultsSection.style.display = 'flex';
+}
+
+function addHistory(text: string, label: string, score: number) {
+  const emptyMsg = historyList.querySelector('.history-empty');
+  if (emptyMsg) emptyMsg.remove();
+
+  const idx = getLabelIndex(label);
+  const displayName = SENTIMENT_NAMES[idx];
+
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.innerHTML = `
+    <span class="history-item-text">${escapeHtml(text)}</span>
+    <span class="history-item-badge score-${idx}">${displayName}</span>
+    <span class="history-item-score">${(score * 100).toFixed(0)}%</span>
+  `;
+  item.addEventListener('click', () => {
+    analysisInput.value = text;
+    analysisInput.focus();
+    resultsSection.style.display = 'none';
+  });
+  historyList.prepend(item);
+
+  const entries: HistoryEntry[] = JSON.parse(localStorage.getItem('ta_history') || '[]');
+  entries.unshift({ text, label: displayName, score });
+  localStorage.setItem('ta_history', JSON.stringify(entries.slice(0, 50)));
+}
+
+function restoreHistory() {
+  const entries: HistoryEntry[] = JSON.parse(localStorage.getItem('ta_history') || '[]');
+  if (entries.length === 0) return;
+  const emptyMsg = historyList.querySelector('.history-empty');
+  if (emptyMsg) emptyMsg.remove();
+  for (const entry of entries) {
+    const idx = getLabelIndex(entry.label);
+    const displayName = SENTIMENT_NAMES[idx];
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.innerHTML = `
+      <span class="history-item-text">${escapeHtml(entry.text)}</span>
+      <span class="history-item-badge score-${idx}">${displayName}</span>
+      <span class="history-item-score">${(entry.score * 100).toFixed(0)}%</span>
+    `;
+    item.addEventListener('click', () => {
+      analysisInput.value = entry.text;
+      analysisInput.focus();
+      resultsSection.style.display = 'none';
+    });
+    historyList.appendChild(item);
+  }
+}
+
+function escapeHtml(text: string): string {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+clearHistoryBtn.addEventListener('click', () => {
+  localStorage.removeItem('ta_history');
+  historyList.innerHTML = '<div class="history-empty">まだ分析履歴がありません</div>';
+});
+
+newAnalysisBtn.addEventListener('click', () => {
+  analysisInput.value = '';
+  analysisInput.focus();
+  resultsSection.style.display = 'none';
+});
+
+restoreHistory();
+
+// Parse classification results
+function parseResults(resultPayload: any): { results: SentimentResult[]; topLabel: string; topScore: number } | null {
+  if (!resultPayload) return null;
+  const output = resultPayload.output;
+  if (!output) return null;
+
+  if (Array.isArray(output)) {
+    const results: SentimentResult[] = output.map((item: any) => ({
+      label: typeof item.label === 'string' ? item.label : String(item.label),
+      score: typeof item.score === 'number' ? item.score : 0,
+    }));
+    results.sort((a, b) => b.score - a.score);
+    return { results, topLabel: results[0]?.label || 'Unknown', topScore: results[0]?.score || 0 };
+  }
+
+  if (typeof output === 'object') {
+    const label = output.label || 'Unknown';
+    const score = typeof output.score === 'number' ? output.score : 0;
+    return { results: [{ label, score }], topLabel: label, topScore: score };
+  }
+
+  return null;
+}
+
+// Submit Analysis
+analysisInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitAnalysis();
+  }
+});
+
+analyzeBtn.addEventListener('click', submitAnalysis);
+
+async function submitAnalysis() {
+  const text = analysisInput.value.trim();
+  if (!text) return;
+
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = '分析中...';
+  resultsSection.style.display = 'none';
+
+  const statusMsg = document.createElement('div');
+  statusMsg.className = 'status-message';
+  statusMsg.textContent = 'Submitting analysis task to Flaxia Crowd...';
+  resultsSection.parentNode?.insertBefore(statusMsg, resultsSection);
+
+  try {
+    resetVisualizer();
+    updateVisualizer('pending', 'Submitting...');
+
+    const taskRecord = await client.submit({
+      workload: 'ai-inference',
+      payload: {
+        task: 'text-classification',
+        model: 'Xenova/bert-base-multilingual-uncased-sentiment',
+        input: text,
+        options: {
+          dtype: 'q4',
+          top_k: 5,
+        } as any
+      }
+    });
+
+    const taskId = taskRecord.id || (taskRecord as any).taskId;
+    const startTime = Date.now();
+    let pollInterval = 1000;
+    let isFinished = false;
+
+    updateVisualizer('pending', taskId, '-', 0);
+    statusMsg.textContent = `Task queued. ID: ${taskId}`;
+
+    while (!isFinished) {
+      await new Promise(r => setTimeout(r, pollInterval));
+      const elapsed = (Date.now() - startTime) / 1000;
+
+      if (elapsed > 60) {
+        isFinished = true;
+        updateVisualizer('failed', taskId);
+        statusMsg.className = 'status-message error';
+        statusMsg.textContent = 'Task timed out after 60 seconds.';
+        break;
+      }
+
+      const currentTask = await client.getTask(taskId);
+
+      if (currentTask.status === 'processing') {
+        updateVisualizer('processing', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
+        statusMsg.textContent = `Assigned to node: ${currentTask.assignedNodeId || '...'}. Analyzing...`;
+      } else if (currentTask.status === 'done') {
+        isFinished = true;
+        updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
+        statusMsg.remove();
+
+        const parsed = parseResults(currentTask.result);
+        if (parsed) {
+          renderScores(parsed.results, parsed.topLabel, parsed.topScore, elapsed);
+          addHistory(text, parsed.topLabel, parsed.topScore);
+        } else {
+          const errorMsg = document.createElement('div');
+          errorMsg.className = 'status-message error';
+          errorMsg.textContent = 'Could not parse analysis results.';
+          resultsSection.parentNode?.insertBefore(errorMsg, resultsSection);
+        }
+      } else if (currentTask.status === 'failed') {
+        isFinished = true;
+        updateVisualizer('failed', taskId);
+        statusMsg.className = 'status-message error';
+        statusMsg.textContent = `Task failed: ${currentTask.error || 'Unknown Error'}`;
+      }
+    }
+  } catch (error: any) {
+    statusMsg.className = 'status-message error';
+    statusMsg.textContent = `Submission error: ${error.message || error}`;
+    updateVisualizer('failed', 'Error');
+    updateNodeUI();
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21L16.65 16.65"/></svg>
+      感情分析を実行
+    `;
+  }
+}

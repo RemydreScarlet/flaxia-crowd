@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TextAnalyzer - 感情分析</title>
+  <meta name="description" content="多言語感情分析ツール powered by Flaxia Crowd and DistilBERT">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span class="logo-icon">◈</span>
+          <span class="logo-text">TextAnalyzer</span>
+        </div>
+        <button id="new-analysis-btn" class="new-analysis-btn" title="New Analysis">+</button>
+        <button id="sidebar-close" class="sidebar-close-btn">✕</button>
+      </div>
+
+      <div class="sidebar-body">
+        <!-- Node Status -->
+        <div class="sidebar-section">
+          <div class="section-label">Node</div>
+          <div class="node-card">
+            <div class="status-row">
+              <span class="dot disconnected" id="node-dot"></span>
+              <span class="status-text" id="node-status-text">Inactive</span>
+            </div>
+            <div class="info-row">
+              <span class="label">ID:</span>
+              <span class="value code" id="node-id-val">-</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Status:</span>
+              <span class="value" id="node-activity-val">-</span>
+            </div>
+            <button id="consent-trigger" class="sidebar-btn">Start Node Service</button>
+          </div>
+        </div>
+
+        <!-- Task Status -->
+        <div class="sidebar-section">
+          <div class="section-label">Active Task</div>
+          <div class="task-card">
+            <div class="timeline" id="task-timeline">
+              <div class="step" id="step-pending">
+                <span class="step-num">1</span>
+                <div class="step-info">
+                  <span class="step-title">Queueing</span>
+                  <span class="step-desc">Pending in queue</span>
+                </div>
+              </div>
+              <div class="step" id="step-processing">
+                <span class="step-num">2</span>
+                <div class="step-info">
+                  <span class="step-title">Processing</span>
+                  <span class="step-desc">Assigned to node</span>
+                </div>
+              </div>
+              <div class="step" id="step-done">
+                <span class="step-num">✓</span>
+                <div class="step-info">
+                  <span class="step-title">Completed</span>
+                  <span class="step-desc">Result returned</span>
+                </div>
+              </div>
+            </div>
+            <div class="task-meta" id="task-meta-info" style="display: none;">
+              <div class="info-row">
+                <span class="label">Task ID:</span>
+                <span class="value code" id="task-id-val">-</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Runner:</span>
+                <span class="value code" id="task-node-val">-</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Elapsed:</span>
+                <span class="value" id="task-time-val">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="sidebar-section">
+          <div class="section-label">Settings</div>
+          <div class="settings-card">
+            <label class="settings-label">Orchestrator URL</label>
+            <input type="text" id="orchestrator-url-input" class="settings-input" placeholder="http://localhost:8787" />
+            <button id="save-settings-btn" class="sidebar-btn">Save & Reconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <span class="footer-text">Flaxia Crowd v0.1</span>
+      </div>
+    </aside>
+
+    <!-- Backdrop for mobile -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top bar -->
+      <header class="top-bar">
+        <button id="sidebar-toggle" class="sidebar-toggle-btn">☰</button>
+        <span class="model-name">感情分析</span>
+        <span class="model-badge">multilingual</span>
+      </header>
+
+      <!-- Analysis Area -->
+      <div class="analysis-container">
+        <!-- Input Section -->
+        <div class="input-section">
+          <label class="input-label" for="analysis-input">テキストを入力して感情分析</label>
+          <textarea id="analysis-input" placeholder="例: 今日はとてもいい天気だ！" rows="3"></textarea>
+          <div class="input-actions">
+            <button id="analyze-btn" class="analyze-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21L16.65 16.65"/></svg>
+              感情分析を実行
+            </button>
+          </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="results-section" style="display: none;">
+          <div class="results-header">
+            <h3>分析結果</h3>
+            <span class="result-badge" id="result-badge">Positive</span>
+          </div>
+          <div class="score-bars" id="score-bars">
+            <div class="score-row" data-label="Very Negative">
+              <span class="score-label">Very Negative</span>
+              <div class="score-track">
+                <div class="score-fill very-negative"></div>
+              </div>
+              <span class="score-value">0%</span>
+            </div>
+            <div class="score-row" data-label="Negative">
+              <span class="score-label">Negative</span>
+              <div class="score-track">
+                <div class="score-fill negative"></div>
+              </div>
+              <span class="score-value">0%</span>
+            </div>
+            <div class="score-row" data-label="Neutral">
+              <span class="score-label">Neutral</span>
+              <div class="score-track">
+                <div class="score-fill neutral"></div>
+              </div>
+              <span class="score-value">0%</span>
+            </div>
+            <div class="score-row" data-label="Positive">
+              <span class="score-label">Positive</span>
+              <div class="score-track">
+                <div class="score-fill positive"></div>
+              </div>
+              <span class="score-value">0%</span>
+            </div>
+            <div class="score-row" data-label="Very Positive">
+              <span class="score-label">Very Positive</span>
+              <div class="score-track">
+                <div class="score-fill very-positive"></div>
+              </div>
+              <span class="score-value">0%</span>
+            </div>
+          </div>
+          <div class="result-text" id="result-text"></div>
+        </div>
+
+        <!-- History Section -->
+        <div id="history-section" class="history-section">
+          <div class="history-header">
+            <h3>分析履歴</h3>
+            <button id="clear-history-btn" class="clear-history-btn">Clear</button>
+          </div>
+          <div id="history-list" class="history-list">
+            <div class="history-empty">まだ分析履歴がありません</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Powered by Flaxia Crowd • DistilBERT multilingual</span>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
