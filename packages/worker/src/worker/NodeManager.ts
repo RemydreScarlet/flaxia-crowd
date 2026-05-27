@@ -77,12 +77,13 @@ export class NodeManager extends DurableObject<Env> {
   }
 
   async registerNode(ws: WebSocket, nodeId: string, capabilities: WorkloadType[]) {
-    for (const sock of this.ctx.getWebSockets(nodeId)) {
-      try { sock.close(); } catch {}
-    }
-
     console.log(`[NodeManager] registerNode: ${nodeId}`, { capabilities });
     this.ctx.acceptWebSocket(ws, [nodeId]);
+
+    for (const sock of this.ctx.getWebSockets(nodeId)) {
+      if (sock === ws) continue;
+      try { sock.close(); } catch {}
+    }
 
     console.log(`[NodeManager] WebSockets after accept:`, this.ctx.getWebSockets().length);
     console.log(`[NodeManager] WebSockets tagged ${nodeId}:`, this.ctx.getWebSockets(nodeId).length);
@@ -211,18 +212,8 @@ export class NodeManager extends DurableObject<Env> {
           try { ws.send(JSON.stringify({ type: 'token', token })); } catch {}
         }
       }
-    } else if (data.type === 'result') {
-      const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
-      const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
-
-      await taskQueue.fetch(new Request("http://internal/complete", {
-        method: "POST",
-        body: JSON.stringify({
-          taskId: data.taskId,
-          result: data.payload,
-          nodeId
-        })
-      }));
+    } else if (data.type === 'result' || data.type === 'error') {
+      const isError = data.type === 'error';
 
       const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
       if (node) {
@@ -237,14 +228,6 @@ export class NodeManager extends DurableObject<Env> {
         }
       }
 
-      const clientWss = this.ctx.getWebSockets(`client:${data.taskId}`);
-      for (const ws of clientWss) {
-        try {
-          ws.send(JSON.stringify({ type: 'done', result: data.payload }));
-          ws.close();
-        } catch {}
-      }
-    } else if (data.type === 'error') {
       const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
       const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
 
@@ -252,29 +235,16 @@ export class NodeManager extends DurableObject<Env> {
         method: "POST",
         body: JSON.stringify({
           taskId: data.taskId,
-          result: null,
+          result: isError ? null : data.payload,
           nodeId,
-          error: data.error
+          error: isError ? data.error : undefined
         })
       }));
-
-      const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
-      if (node) {
-        node.status = 'idle';
-        delete node.currentTaskId;
-        await this.ctx.storage.put(`node:${nodeId}`, node);
-
-        const idleNodes = await this.getIdleNodes();
-        if (!idleNodes.includes(nodeId)) {
-          idleNodes.push(nodeId);
-          await this.ctx.storage.put("nodes:idle", idleNodes);
-        }
-      }
 
       const clientWss = this.ctx.getWebSockets(`client:${data.taskId}`);
       for (const ws of clientWss) {
         try {
-          ws.send(JSON.stringify({ type: 'error', error: data.error }));
+          ws.send(JSON.stringify({ type: isError ? 'error' : 'done', [isError ? 'error' : 'result']: isError ? data.error : data.payload }));
           ws.close();
         } catch {}
       }
@@ -295,13 +265,39 @@ export class NodeManager extends DurableObject<Env> {
 
     const node = await this.ctx.storage.get<NodeRecord>(`node:${tag}`);
     if (node?.currentTaskId) {
-      console.log(`[NodeManager] webSocketClose: re-queuing task ${node.currentTaskId}`);
+      const allWebSockets = this.ctx.getWebSockets();
+      const hasOtherNode = allWebSockets.some(s => {
+        if (s === ws) return false;
+        const t = this.ctx.getTags(s)[0];
+        return t && !t.startsWith('client:') && t !== tag;
+      });
+
       const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
       const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
-      await taskQueue.fetch(new Request("http://internal/requeue", {
-        method: "POST",
-        body: JSON.stringify({ taskId: node.currentTaskId, nodeId: tag, error: "Node disconnected" })
-      }));
+
+      if (hasOtherNode) {
+        console.log(`[NodeManager] webSocketClose: re-queuing task ${node.currentTaskId} (other nodes available)`);
+        await taskQueue.fetch(new Request("http://internal/requeue", {
+          method: "POST",
+          body: JSON.stringify({ taskId: node.currentTaskId, nodeId: tag, error: "Node disconnected" })
+        }));
+      } else {
+        console.log(`[NodeManager] webSocketClose: failing task ${node.currentTaskId} (no other nodes)`);
+        await taskQueue.fetch(new Request("http://internal/complete", {
+          method: "POST",
+          body: JSON.stringify({
+            taskId: node.currentTaskId,
+            result: null,
+            nodeId: tag,
+            error: "No available nodes"
+          })
+        }));
+
+        const clientWss = this.ctx.getWebSockets(`client:${node.currentTaskId}`);
+        for (const ws of clientWss) {
+          try { ws.send(JSON.stringify({ type: 'error', error: "No available nodes" })); ws.close(); } catch {}
+        }
+      }
     }
 
     await this.unregisterNode(tag);
