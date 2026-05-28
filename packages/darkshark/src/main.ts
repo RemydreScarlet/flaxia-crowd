@@ -91,9 +91,9 @@ function updateNodeUI() {
 
 // WebGPU detection for optimal inference device
 async function detectBestDevice(): Promise<string> {
-  if (navigator.gpu) {
+  if ((navigator as any).gpu) {
     try {
-      const adapter = await navigator.gpu.requestAdapter();
+      const adapter = await (navigator as any).gpu.requestAdapter();
       if (adapter?.features.has('shader-f16')) return 'webgpu';
     } catch {}
   }

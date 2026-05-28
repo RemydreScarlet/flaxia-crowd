@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FlaxiaClient } from '../client';
-import type { TaskRecord } from '../types';
+import type { TaskRecord, TaskPayload } from '../types';
 import { TaskNotFoundError, FlaxiaError, AuthenticationError } from '../errors';
 
 describe('FlaxiaClient', () => {
@@ -128,7 +128,7 @@ describe('FlaxiaClient', () => {
         id: 'task_1',
         status: 'done',
         workload: 'ai-inference',
-        payload: {},
+        payload: {} as TaskPayload,
         createdAt: Date.now(),
         retryCount: 0,
         timeoutMs: 30000,
@@ -181,7 +181,7 @@ describe('FlaxiaClient', () => {
         id: 'task_1',
         status: 'done',
         workload: 'ai-inference',
-        payload: {},
+        payload: {} as TaskPayload,
         createdAt: Date.now(),
         retryCount: 0,
         timeoutMs: 30000,
@@ -203,7 +203,7 @@ describe('FlaxiaClient', () => {
         id: 'task_1',
         status: 'failed',
         workload: 'ai-inference',
-        payload: {},
+        payload: {} as TaskPayload,
         createdAt: Date.now(),
         retryCount: 3,
         timeoutMs: 30000,
@@ -223,11 +223,11 @@ describe('FlaxiaClient', () => {
     it('polls multiple times until done', async () => {
       const pendingTask: TaskRecord = {
         id: 'task_1', status: 'pending', workload: 'ai-inference',
-        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+        payload: {} as TaskPayload, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
       };
       const doneTask: TaskRecord = {
         id: 'task_1', status: 'done', workload: 'ai-inference',
-        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+        payload: {} as TaskPayload, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
         result: { output: 'final' },
       };
 
@@ -248,7 +248,7 @@ describe('FlaxiaClient', () => {
     it('throws FlaxiaError on polling timeout', async () => {
       const pendingTask: TaskRecord = {
         id: 'task_1', status: 'pending', workload: 'ai-inference',
-        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+        payload: {} as TaskPayload, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
       };
 
       (fetch as any).mockResolvedValue({
@@ -263,7 +263,7 @@ describe('FlaxiaClient', () => {
     it('throws FlaxiaError with POLLING_TIMEOUT code on timeout', async () => {
       const pendingTask: TaskRecord = {
         id: 'task_1', status: 'pending', workload: 'ai-inference',
-        payload: {}, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
+        payload: {} as TaskPayload, createdAt: Date.now(), retryCount: 0, timeoutMs: 30000,
       };
 
       (fetch as any).mockResolvedValue({

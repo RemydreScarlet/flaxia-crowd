@@ -113,6 +113,28 @@ export class NodeManager extends DurableObject<Env> {
     } catch {
       // TaskQueue might not be ready yet; alarm will retry
     }
+
+    if (capabilities.includes('vector-store') && this.env.VECTOR_INDEX) {
+      try {
+        const vectorIndexId = this.env.VECTOR_INDEX.idFromName('global-vector-index');
+        const vectorIndex = this.env.VECTOR_INDEX.get(vectorIndexId);
+        const shardResponse = await vectorIndex.fetch(
+          new Request('http://internal/register-storage-node', {
+            method: 'POST',
+            body: JSON.stringify({ nodeId, capabilities }),
+          }),
+        );
+        const { rangeStart, rangeEnd } = await shardResponse.json() as { rangeStart: number; rangeEnd: number };
+
+        ws.send(JSON.stringify({
+          type: 'shard-assign',
+          rangeStart,
+          rangeEnd,
+        }));
+      } catch (err) {
+        console.error(`[NodeManager] VectorIndex registration failed for ${nodeId}:`, err);
+      }
+    }
   }
 
   async getIdleNodes(): Promise<string[]> {
@@ -304,9 +326,25 @@ export class NodeManager extends DurableObject<Env> {
   }
 
   async unregisterNode(nodeId: string) {
+    const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
     await this.ctx.storage.delete(`node:${nodeId}`);
     const idleNodes = await this.getIdleNodes();
     await this.ctx.storage.put("nodes:idle", idleNodes.filter(id => id !== nodeId));
+
+    if (node?.capabilities.includes('vector-store') && this.env.VECTOR_INDEX) {
+      try {
+        const vectorIndexId = this.env.VECTOR_INDEX.idFromName('global-vector-index');
+        const vectorIndex = this.env.VECTOR_INDEX.get(vectorIndexId);
+        await vectorIndex.fetch(
+          new Request('http://internal/unregister-storage-node', {
+            method: 'POST',
+            body: JSON.stringify({ nodeId }),
+          }),
+        );
+      } catch (err) {
+        console.error(`[NodeManager] VectorIndex unregistration failed for ${nodeId}:`, err);
+      }
+    }
   }
 
   async alarm() {

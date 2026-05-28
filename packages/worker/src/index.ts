@@ -6,10 +6,12 @@ import { cors } from 'hono/cors'
 import { crowdApp } from './crowd'
 export { TaskQueue } from './worker/TaskQueue'
 export { NodeManager } from './worker/NodeManager'
+export { VectorIndex } from './worker/VectorIndex'
 
 export interface Env {
   TASK_QUEUE: DurableObjectNamespace
   NODE_MANAGER: DurableObjectNamespace
+  VECTOR_INDEX: DurableObjectNamespace
 }
 
 const app = new Hono<{ Bindings: Env }>()

@@ -33,7 +33,7 @@ class SignalingClient {
       this.ws = null;
     }
 
-    const capabilities: WorkloadType[] = ['ai-inference', 'image-process'];
+    const capabilities: WorkloadType[] = this.config.capabilities ?? ['ai-inference', 'image-process'];
     const wsUrl = new URL(`${this.config.orchestratorUrl.replace('http', 'ws')}/crowd/signal`);
     wsUrl.searchParams.set('nodeId', this.nodeId);
     wsUrl.searchParams.set('capabilities', capabilities.join(','));

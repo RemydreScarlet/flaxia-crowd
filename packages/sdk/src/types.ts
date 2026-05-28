@@ -4,7 +4,7 @@
 
 export type TaskStatus = 'pending' | 'assigning' | 'processing' | 'done' | 'failed';
 
-export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container';
+export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container' | 'web-crawl' | 'vector-embed' | 'vector-store' | 'vector-query';
 
 // --- AI Inference ---
 
@@ -111,9 +111,91 @@ export interface ContainerResult {
   exitCode: number;
 }
 
+// --- Web Crawl ---
+
+export interface WebCrawlPayload {
+  url: string;
+  maxDepth?: number;
+  extractSelectors?: string[];
+  respectRobotsTxt?: boolean;
+  extractFormat?: 'text' | 'markdown' | 'html';
+}
+
+export interface WebCrawlResult {
+  url: string;
+  title: string;
+  content: string;
+  format: string;
+  metadata: {
+    contentType: string;
+    contentLength: number;
+    fetchDurationMs: number;
+    statusCode: number;
+  };
+  links: string[];
+  crawlDelay?: number;
+}
+
+// --- Vector Embedding ---
+
+export interface VectorEmbedPayload {
+  text: string;
+  model?: string;
+  chunkIndex?: number;
+  docId?: string;
+}
+
+export interface VectorEmbedResult {
+  vector: number[];
+  model: string;
+  dimensions: number;
+  durationMs: number;
+}
+
+// --- Vector Store ---
+
+export interface VectorStorePayload {
+  docId: string;
+  vector: number[];
+  metadata: {
+    title: string;
+    url: string;
+    snippet: string;
+    [key: string]: unknown;
+  };
+  shardKey: string;
+}
+
+export interface VectorStoreResult {
+  stored: boolean;
+  nodeId: string;
+  totalVectors: number;
+}
+
+// --- Vector Query ---
+
+export interface VectorQueryPayload {
+  queryVector: number[];
+  topK: number;
+}
+
+export interface VectorQueryResult {
+  results: Array<{
+    docId: string;
+    score: number;
+    metadata: {
+      title: string;
+      url: string;
+      snippet: string;
+    };
+  }>;
+  nodeId: string;
+  searchDurationMs: number;
+}
+
 // --- Core Task Types ---
 
-export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload;
+export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | WebCrawlPayload | VectorEmbedPayload | VectorStorePayload | VectorQueryPayload;
 
 export interface TaskRecord {
   id: string;
@@ -142,4 +224,5 @@ export interface NodeConfig {
     accentColor?: string;
   };
   maxCpuLoad?: number;
+  capabilities?: WorkloadType[];
 }

@@ -13,6 +13,14 @@ class_name = "TaskQueue"
 name = "NODE_MANAGER"
 class_name = "NodeManager"
 
+[[durable_objects.bindings]]
+name = "VECTOR_INDEX"
+class_name = "VectorIndex"
+
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["TaskQueue", "NodeManager"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["VectorIndex"]
