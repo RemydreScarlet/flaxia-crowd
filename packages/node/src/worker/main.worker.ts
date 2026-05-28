@@ -25,10 +25,6 @@ self.onmessage = async (e: MessageEvent) => {
         const { handleContainer } = await import('../workloads/container');
         result = await handleContainer(payload);
         break;
-      case 'web-crawl':
-        const { handleWebCrawl } = await import('../workloads/web-crawl');
-        result = await handleWebCrawl(payload);
-        break;
       case 'vector-embed':
         const { handleVectorEmbed } = await import('../workloads/vector-embed');
         result = await handleVectorEmbed(payload);

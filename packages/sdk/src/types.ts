@@ -4,7 +4,7 @@
 
 export type TaskStatus = 'pending' | 'assigning' | 'processing' | 'done' | 'failed';
 
-export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container' | 'web-crawl' | 'vector-embed' | 'vector-store' | 'vector-query';
+export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container' | 'vector-embed' | 'vector-store' | 'vector-query';
 
 // --- AI Inference ---
 
@@ -111,31 +111,6 @@ export interface ContainerResult {
   exitCode: number;
 }
 
-// --- Web Crawl ---
-
-export interface WebCrawlPayload {
-  url: string;
-  maxDepth?: number;
-  extractSelectors?: string[];
-  respectRobotsTxt?: boolean;
-  extractFormat?: 'text' | 'markdown' | 'html';
-}
-
-export interface WebCrawlResult {
-  url: string;
-  title: string;
-  content: string;
-  format: string;
-  metadata: {
-    contentType: string;
-    contentLength: number;
-    fetchDurationMs: number;
-    statusCode: number;
-  };
-  links: string[];
-  crawlDelay?: number;
-}
-
 // --- Vector Embedding ---
 
 export interface VectorEmbedPayload {
@@ -195,7 +170,7 @@ export interface VectorQueryResult {
 
 // --- Core Task Types ---
 
-export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | WebCrawlPayload | VectorEmbedPayload | VectorStorePayload | VectorQueryPayload;
+export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | VectorEmbedPayload | VectorStorePayload | VectorQueryPayload;
 
 export interface TaskRecord {
   id: string;
