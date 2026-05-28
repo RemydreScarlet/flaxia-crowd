@@ -31,6 +31,10 @@ export interface AiInferenceOptions {
   tokenBufferIntervalMs?: number;
   /** Number of threads for WASM backend (requires crossOriginIsolated, default: hardwareConcurrency) */
   numThreads?: number;
+  /** Source language code (for translation tasks, e.g. 'en_XX') */
+  src_lang?: string;
+  /** Target language code (for translation tasks, e.g. 'ja_XX') */
+  tgt_lang?: string;
 }
 
 export interface AiInferencePayload {

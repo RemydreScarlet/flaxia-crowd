@@ -86,6 +86,8 @@ export const handleAiInference = async (
   if (options.top_p != null) genOptions.top_p = options.top_p;
   if (options.top_k != null) genOptions.top_k = options.top_k;
   if (options.repetition_penalty != null) genOptions.repetition_penalty = options.repetition_penalty;
+  if (options.src_lang != null) genOptions.src_lang = options.src_lang;
+  if (options.tgt_lang != null) genOptions.tgt_lang = options.tgt_lang;
 
   if (onToken && generator.tokenizer) {
     const streamer = new TextStreamer(generator.tokenizer, {

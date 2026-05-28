@@ -367,7 +367,7 @@ async function submitAnalysis() {
         model: 'Xenova/bert-base-multilingual-uncased-sentiment',
         input: text,
         options: {
-          dtype: 'q4',
+          dtype: 'q4f16',
           top_k: 5,
         } as any
       }

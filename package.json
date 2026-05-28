@@ -10,6 +10,7 @@
     "dev:worker": "npm run dev --workspace=packages/worker",
     "dev:node": "npm run dev --workspace=packages/node",
     "dev:darkshark": "npm run dev --workspace=packages/darkshark",
-    "dev:text-analyzer": "npm run dev --workspace=packages/text-analyzer"
+    "dev:text-analyzer": "npm run dev --workspace=packages/text-analyzer",
+    "dev:translation": "npm run dev --workspace=packages/translation"
   }
 }
