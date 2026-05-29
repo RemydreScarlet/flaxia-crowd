@@ -7,7 +7,9 @@ describe('Task Flow Integration', () => {
     const nodeManagerId = env.NODE_MANAGER.idFromName('flow-empty');
     const nodeManagerStub = env.NODE_MANAGER.get(nodeManagerId);
 
-    const response = await nodeManagerStub.fetch(new Request('http://internal/pick?workload=ai-inference'));
+    const response = await nodeManagerStub.fetch(new Request('http://internal/pick?workload=ai-inference', {
+      headers: { 'X-DO-Shared-Secret': 'dev-shared-secret-change-in-production' },
+    }));
     expect(response.status).toBe(200);
     const data = await response.json() as { nodeId?: string };
     expect(data.nodeId).toBeUndefined();

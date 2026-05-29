@@ -26,7 +26,7 @@ const useViteProxy = !savedOrchestrator && window.location.hostname === 'localho
 const orchestratorUrl = useViteProxy ? window.location.origin : displayOrchestratorUrl;
 
 const client = new FlaxiaClient({
-  apiKey: 'fc_live_textanalyzer_example_key',
+  apiKey: import.meta.env.VITE_FLAXIA_API_KEY || 'fc_live_textanalyzer_example_key',
   baseUrl: `${orchestratorUrl}/crowd`
 });
 

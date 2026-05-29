@@ -4,6 +4,16 @@ compatibility_date = "2024-04-03"
 
 [vars]
 ENVIRONMENT = "development"
+# カンマ区切りで許可するAPIキー（本番環境では wrangler secret の使用を推奨）
+API_KEYS = "fc_live_textanalyzer_example_key,fc_live_darkshark_example_key"
+# カンマ区切りで許可するCORSオリジン（開発用）
+CORS_ORIGINS = "http://localhost:5173,http://localhost:5174,http://localhost:8787"
+# DO間通信の共有シークレット（本番環境では必ず変更）
+DO_SHARED_SECRET = "dev-shared-secret-change-in-production"
+# レート制限（1分間あたりの最大リクエスト数）
+RATE_LIMIT_MAX = "100"
+# ペイロード最大サイズ（バイト）
+MAX_PAYLOAD_SIZE = "1048576"
 
 [[durable_objects.bindings]]
 name = "TASK_QUEUE"
@@ -17,6 +27,10 @@ class_name = "NodeManager"
 name = "VECTOR_INDEX"
 class_name = "VectorIndex"
 
+[[durable_objects.bindings]]
+name = "API_KEY_MANAGER"
+class_name = "ApiKeyManager"
+
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["TaskQueue", "NodeManager"]
@@ -24,3 +38,7 @@ new_sqlite_classes = ["TaskQueue", "NodeManager"]
 [[migrations]]
 tag = "v4"
 new_sqlite_classes = ["VectorIndex"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["ApiKeyManager"]

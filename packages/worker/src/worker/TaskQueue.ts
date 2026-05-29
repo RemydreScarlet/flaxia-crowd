@@ -10,21 +10,35 @@ export class TaskQueue extends DurableObject<Env> {
     super(ctx, env);
   }
 
+  private validateInternal(request: Request): boolean {
+    const secret = request.headers.get("X-DO-Shared-Secret");
+    return secret === this.env.DO_SHARED_SECRET;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/complete") {
+      if (!this.validateInternal(request)) {
+        return new Response("Forbidden", { status: 403 });
+      }
       const { taskId, result, nodeId, error } = await request.json() as { taskId: string; result: unknown; nodeId: string; error?: string };
       await this.completeTask(taskId, result, nodeId, error);
       return new Response("OK");
     }
 
     if (url.pathname === "/assign-next") {
+      if (!this.validateInternal(request)) {
+        return new Response("Forbidden", { status: 403 });
+      }
       await this.tryAssignAll();
       return new Response("OK");
     }
 
     if (url.pathname === "/requeue") {
+      if (!this.validateInternal(request)) {
+        return new Response("Forbidden", { status: 403 });
+      }
       const { taskId, nodeId, error } = await request.json() as { taskId: string; nodeId: string; error?: string };
       await this.requeueTask(taskId, nodeId, error);
       return new Response("OK");
@@ -79,7 +93,9 @@ export class TaskQueue extends DurableObject<Env> {
         if (!task || task.status !== 'pending') continue;
 
         console.log(`[TaskQueue] picking node for task ${taskId} (workload=${task.workload})`);
-        const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`));
+        const nodeResponse = await nodeManager.fetch(new Request(`http://internal/pick?workload=${task.workload}`, {
+          headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
+        }));
         const respBody = await nodeResponse.text();
         console.log(`[TaskQueue] pick response: status=${nodeResponse.status}, body=${respBody}`);
         if (nodeResponse.status === 200) {
@@ -116,6 +132,7 @@ export class TaskQueue extends DurableObject<Env> {
     const nodeManager = this.env.NODE_MANAGER.get(nodeManagerId);
     await nodeManager.fetch(new Request("http://internal/assign", {
       method: "POST",
+      headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
       body: JSON.stringify({ nodeId, task })
     }));
   }

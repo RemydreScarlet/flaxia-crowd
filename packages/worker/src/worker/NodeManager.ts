@@ -28,6 +28,11 @@ export class NodeManager extends DurableObject<Env> {
     super(ctx, env);
   }
 
+  private validateInternal(request: Request): boolean {
+    const secret = request.headers.get("X-DO-Shared-Secret");
+    return secret === this.env.DO_SHARED_SECRET;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/ws" || url.pathname === "/crowd/signal") {
@@ -57,18 +62,21 @@ export class NodeManager extends DurableObject<Env> {
     }
 
     if (url.pathname === "/pick") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const workload = url.searchParams.get("workload") as WorkloadType;
       const nodeId = await this.pickNode(workload);
       return Response.json({ nodeId });
     }
 
     if (url.pathname === "/assign") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const { nodeId, task } = await request.json() as { nodeId: string; task: TaskRecord };
       await this.assignTask(nodeId, task);
       return new Response("OK");
     }
 
     if (url.pathname === "/nodes") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const nodes = await this.getAllNodes();
       return Response.json({ nodes });
     }
@@ -109,7 +117,9 @@ export class NodeManager extends DurableObject<Env> {
     const taskQueueId = this.env.TASK_QUEUE.idFromName("global-queue");
     const taskQueue = this.env.TASK_QUEUE.get(taskQueueId);
     try {
-      await taskQueue.fetch(new Request("http://internal/assign-next"));
+      await taskQueue.fetch(new Request("http://internal/assign-next", {
+        headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
+      }));
     } catch {
       // TaskQueue might not be ready yet; alarm will retry
     }
@@ -121,6 +131,7 @@ export class NodeManager extends DurableObject<Env> {
         const shardResponse = await vectorIndex.fetch(
           new Request('http://internal/register-storage-node', {
             method: 'POST',
+            headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
             body: JSON.stringify({ nodeId, capabilities }),
           }),
         );
@@ -255,6 +266,7 @@ export class NodeManager extends DurableObject<Env> {
 
       await taskQueue.fetch(new Request("http://internal/complete", {
         method: "POST",
+        headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
         body: JSON.stringify({
           taskId: data.taskId,
           result: isError ? null : data.payload,
@@ -301,12 +313,14 @@ export class NodeManager extends DurableObject<Env> {
         console.log(`[NodeManager] webSocketClose: re-queuing task ${node.currentTaskId} (other nodes available)`);
         await taskQueue.fetch(new Request("http://internal/requeue", {
           method: "POST",
+          headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
           body: JSON.stringify({ taskId: node.currentTaskId, nodeId: tag, error: "Node disconnected" })
         }));
       } else {
         console.log(`[NodeManager] webSocketClose: failing task ${node.currentTaskId} (no other nodes)`);
         await taskQueue.fetch(new Request("http://internal/complete", {
           method: "POST",
+          headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
           body: JSON.stringify({
             taskId: node.currentTaskId,
             result: null,
@@ -338,6 +352,7 @@ export class NodeManager extends DurableObject<Env> {
         await vectorIndex.fetch(
           new Request('http://internal/unregister-storage-node', {
             method: 'POST',
+            headers: { 'X-DO-Shared-Secret': this.env.DO_SHARED_SECRET },
             body: JSON.stringify({ nodeId }),
           }),
         );

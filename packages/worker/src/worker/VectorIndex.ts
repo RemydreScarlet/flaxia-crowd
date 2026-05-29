@@ -25,33 +25,43 @@ export class VectorIndex extends DurableObject<Env> {
     super(ctx, env);
   }
 
+  private validateInternal(request: Request): boolean {
+    const secret = request.headers.get("X-DO-Shared-Secret");
+    return secret === this.env.DO_SHARED_SECRET;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/register-storage-node") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const { nodeId } = await request.json() as { nodeId: string };
       const result = await this.registerStorageNode(nodeId);
       return Response.json(result);
     }
 
     if (url.pathname === "/unregister-storage-node") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const { nodeId } = await request.json() as { nodeId: string };
       await this.unregisterStorageNode(nodeId);
       return new Response("OK");
     }
 
     if (url.pathname === "/query-nodes") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const nodes = Array.from(this.nodes.values());
       return Response.json({ nodes });
     }
 
     if (url.pathname === "/get-shard") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const { shardKey } = await request.json() as { shardKey: string };
       const assignment = this.getShardAssignment(parseInt(shardKey, 10));
       return Response.json({ assignment });
     }
 
     if (url.pathname === "/stats") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const aliveNodes = Array.from(this.nodes.values())
         .filter(n => Date.now() - n.lastHeartbeat < 120000);
       const totalVectors = aliveNodes.reduce((sum, n) => sum + n.vectorCount, 0);
@@ -67,6 +77,7 @@ export class VectorIndex extends DurableObject<Env> {
     }
 
     if (url.pathname === "/heartbeat") {
+      if (!this.validateInternal(request)) return new Response("Forbidden", { status: 403 });
       const { nodeId, vectorCount } = await request.json() as { nodeId: string; vectorCount: number };
       const node = this.nodes.get(nodeId);
       if (node) {
