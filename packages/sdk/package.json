@@ -1,11 +1,21 @@
 {
   "name": "@flaxia/sdk",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RemydreScarlet/flaxia-crowd.git"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",

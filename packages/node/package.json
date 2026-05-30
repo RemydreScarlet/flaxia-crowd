@@ -1,20 +1,30 @@
 {
   "name": "@flaxia/node",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "main": "dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RemydreScarlet/flaxia-crowd.git"
+  },
   "scripts": {
     "build": "rm -f tsconfig.tsbuildinfo && vite build && tsc -b",
     "dev": "vite",
     "test": "vitest"
   },
   "dependencies": {
+    "@flaxia/sdk": "^0.1.0",
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@huggingface/transformers": "^4.2.0"
   },
   "devDependencies": {
-    "@flaxia/sdk": "*",
     "@testing-library/dom": "^10.4.1",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
