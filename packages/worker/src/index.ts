@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { crowdApp } from './crowd'
+export { Coordinator } from './worker/Coordinator'
 
 export interface Env {
+  COORDINATOR: DurableObjectNamespace
   API_KEYS: string
   CORS_ORIGINS: string
   RATE_LIMIT_MAX: string
