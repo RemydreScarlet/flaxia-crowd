@@ -40,148 +40,11 @@ const resultText = document.getElementById('result-text') as HTMLDivElement;
 const historyList = document.getElementById('history-list') as HTMLDivElement;
 const clearHistoryBtn = document.getElementById('clear-history-btn') as HTMLButtonElement;
 const newAnalysisBtn = document.getElementById('new-analysis-btn') as HTMLButtonElement;
-
-// Sidebar Elements
-const nodeDot = document.getElementById('node-dot') as HTMLSpanElement;
-const nodeStatusText = document.getElementById('node-status-text') as HTMLSpanElement;
-const nodeIdVal = document.getElementById('node-id-val') as HTMLSpanElement;
-const nodeActivityVal = document.getElementById('node-activity-val') as HTMLSpanElement;
 const consentTrigger = document.getElementById('consent-trigger') as HTMLButtonElement;
-const orchestratorUrlInput = document.getElementById('orchestrator-url-input') as HTMLInputElement | null;
-const saveSettingsBtn = document.getElementById('save-settings-btn') as HTMLButtonElement | null;
-const stepPending = document.getElementById('step-pending') as HTMLDivElement;
-const stepProcessing = document.getElementById('step-processing') as HTMLDivElement;
-const stepDone = document.getElementById('step-done') as HTMLDivElement;
-const taskMetaInfo = document.getElementById('task-meta-info') as HTMLDivElement;
-const taskIdVal = document.getElementById('task-id-val') as HTMLSpanElement;
-const taskNodeVal = document.getElementById('task-node-val') as HTMLSpanElement;
-const taskTimeVal = document.getElementById('task-time-val') as HTMLSpanElement;
-
-// Sidebar toggle
-const sidebarToggle = document.getElementById('sidebar-toggle') as HTMLButtonElement | null;
-const sidebarClose = document.getElementById('sidebar-close') as HTMLButtonElement | null;
-const sidebar = document.getElementById('sidebar') as HTMLElement | null;
-const sidebarBackdrop = document.getElementById('sidebar-backdrop') as HTMLElement | null;
-
-function openSidebar() {
-  sidebar?.classList.add('open');
-  sidebarBackdrop?.classList.add('open');
-}
-function closeSidebar() {
-  sidebar?.classList.remove('open');
-  sidebarBackdrop?.classList.remove('open');
-}
-sidebarToggle?.addEventListener('click', openSidebar);
-sidebarClose?.addEventListener('click', closeSidebar);
-sidebarBackdrop?.addEventListener('click', closeSidebar);
-
-// Orchestrator URL settings
-if (orchestratorUrlInput) {
-  orchestratorUrlInput.value = displayOrchestratorUrl;
-}
-if (saveSettingsBtn && orchestratorUrlInput) {
-  saveSettingsBtn.addEventListener('click', () => {
-    const nextUrl = orchestratorUrlInput.value.trim();
-    if (nextUrl) {
-      localStorage.setItem('flaxia_orchestrator_url', nextUrl);
-      window.location.reload();
-    }
-  });
-}
-
-// Node UI
-function updateNodeUI() {
-  const consentGranted = localStorage.getItem('flaxia_consent_granted') === 'true';
-  const nodeId = localStorage.getItem('flaxia_node_id');
-
-  if (consentGranted && nodeId) {
-    nodeDot.className = 'dot connected';
-    nodeStatusText.innerText = 'Connected to Network';
-    nodeIdVal.innerText = nodeId;
-    nodeIdVal.title = nodeId;
-    nodeActivityVal.innerText = 'Idle / Waiting';
-    consentTrigger.style.display = 'none';
-  } else {
-    nodeDot.className = 'dot disconnected';
-    nodeStatusText.innerText = 'Inactive';
-    nodeIdVal.innerText = '-';
-    nodeActivityVal.innerText = '-';
-    consentTrigger.style.display = 'block';
-  }
-}
-
-consentTrigger.addEventListener('click', () => {
-  initFlaxiaNode({
-    orchestratorUrl,
-    siteId: 'textanalyzer-example',
-    consent: {
-      brandName: 'TextAnalyzer Node',
-      position: 'bottom-right',
-      accentColor: '#7c3aed'
-    }
-  });
-
-  let attempts = 0;
-  const interval = setInterval(() => {
-    updateNodeUI();
-    attempts++;
-    if (attempts > 30 || localStorage.getItem('flaxia_node_id')) {
-      clearInterval(interval);
-    }
-  }, 1000);
-});
-
-updateNodeUI();
-
-if (localStorage.getItem('flaxia_consent_granted') === 'true') {
-  initFlaxiaNode({
-    orchestratorUrl,
-    siteId: 'textanalyzer-example',
-    consent: {
-      brandName: 'TextAnalyzer Node',
-      position: 'bottom-right',
-      accentColor: '#7c3aed'
-    }
-  });
-}
 
 // Task Visualizer
-function resetVisualizer() {
-  stepPending.className = 'step';
-  stepProcessing.className = 'step';
-  stepDone.className = 'step';
-  taskMetaInfo.style.display = 'none';
-}
-
-function updateVisualizer(status: 'pending' | 'processing' | 'done' | 'failed', taskId: string, nodeId = '-', elapsedSec = 0) {
-  resetVisualizer();
-  taskMetaInfo.style.display = 'block';
-  taskIdVal.innerText = taskId;
-  taskNodeVal.innerText = nodeId;
-  taskTimeVal.innerText = `${elapsedSec.toFixed(1)}s`;
-
-  if (status === 'pending') {
-    stepPending.className = 'step active';
-  } else if (status === 'processing') {
-    stepPending.className = 'step complete';
-    stepProcessing.className = 'step active';
-    const localNodeId = localStorage.getItem('flaxia_node_id');
-    if (localNodeId && nodeId === localNodeId) {
-      nodeDot.className = 'dot busy';
-      nodeActivityVal.innerText = 'Analyzing Text';
-    }
-  } else if (status === 'done') {
-    stepPending.className = 'step complete';
-    stepProcessing.className = 'step complete';
-    stepDone.className = 'step active';
-    updateNodeUI();
-  } else if (status === 'failed') {
-    stepPending.className = 'step';
-    stepProcessing.className = 'step';
-    stepDone.className = 'step';
-    updateNodeUI();
-  }
-}
+function resetVisualizer() { }
+function updateVisualizer(status: 'pending' | 'processing' | 'done' | 'failed', taskId: string, nodeId = '-', elapsedSec = 0) { }
 
 // Scoring
 const SCORE_CLASSES = ['very-negative', 'negative', 'neutral', 'positive', 'very-positive'];
@@ -309,6 +172,30 @@ newAnalysisBtn.addEventListener('click', () => {
 
 restoreHistory();
 
+consentTrigger.addEventListener('click', () => {
+  initFlaxiaNode({
+    orchestratorUrl,
+    siteId: 'textanalyzer-example',
+    consent: {
+      brandName: 'TextAnalyzer Node',
+      position: 'bottom-right',
+      accentColor: '#7c3aed'
+    }
+  });
+});
+
+if (localStorage.getItem('flaxia_consent_granted') === 'true') {
+  initFlaxiaNode({
+    orchestratorUrl,
+    siteId: 'textanalyzer-example',
+    consent: {
+      brandName: 'TextAnalyzer Node',
+      position: 'bottom-right',
+      accentColor: '#7c3aed'
+    }
+  });
+}
+
 // Parse classification results
 function parseResults(resultPayload: any): { results: SentimentResult[]; topLabel: string; topScore: number } | null {
   if (!resultPayload) return null;
@@ -424,7 +311,6 @@ async function submitAnalysis() {
     statusMsg.className = 'status-message error';
     statusMsg.textContent = `Submission error: ${error.message || error}`;
     updateVisualizer('failed', 'Error');
-    updateNodeUI();
   } finally {
     analyzeBtn.disabled = false;
     analyzeBtn.innerHTML = `

@@ -5,15 +5,12 @@ import { initFlaxiaNode } from '@flaxia/node';
 const SYSTEM_PROMPT = 'You are DarkShark, a helpful AI assistant running on the decentralized Flaxia Crowd network. You are concise and accurate in your responses.';
 const CHATML_TEMPLATE = '<|im_start|>system\n{{SYSTEM}}<|im_end|>\n{{HISTORY}}<|im_start|>assistant\n';
 
-// Setup dynamic/configurable Orchestrator URL
 const defaultOrchestrator = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8787'
   : 'https://flaxia-worker.remydre8.workers.dev';
 
 const savedOrchestrator = localStorage.getItem('flaxia_orchestrator_url');
 const displayOrchestratorUrl = savedOrchestrator || defaultOrchestrator;
-// On localhost with the default orchestrator, use the Vite proxy (same origin)
-// to avoid CORS/COEP issues with cross-origin isolation
 const useViteProxy = !savedOrchestrator && window.location.hostname === 'localhost';
 const orchestratorUrl = useViteProxy ? window.location.origin : displayOrchestratorUrl;
 
@@ -28,102 +25,11 @@ const chatInputForm = document.getElementById('chat-input-form') as HTMLFormElem
 const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
 const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 
-// Local Node UI Elements
-const nodeDot = document.getElementById('node-dot') as HTMLSpanElement;
-const nodeStatusText = document.getElementById('node-status-text') as HTMLSpanElement;
-const nodeIdVal = document.getElementById('node-id-val') as HTMLSpanElement;
-const nodeActivityVal = document.getElementById('node-activity-val') as HTMLSpanElement;
-const consentTrigger = document.getElementById('consent-trigger') as HTMLButtonElement;
-
-// Connection Settings UI Elements
-const orchestratorUrlInput = document.getElementById('orchestrator-url-input') as HTMLInputElement | null;
-const saveSettingsBtn = document.getElementById('save-settings-btn') as HTMLButtonElement | null;
-
-if (orchestratorUrlInput) {
-  orchestratorUrlInput.value = displayOrchestratorUrl;
-}
-
-if (saveSettingsBtn && orchestratorUrlInput) {
-  saveSettingsBtn.addEventListener('click', () => {
-    const nextUrl = orchestratorUrlInput.value.trim();
-    if (nextUrl) {
-      localStorage.setItem('flaxia_orchestrator_url', nextUrl);
-      window.location.reload();
-    }
-  });
-}
-
-// Task Visualizer UI Elements
-const stepPending = document.getElementById('step-pending') as HTMLDivElement;
-const stepProcessing = document.getElementById('step-processing') as HTMLDivElement;
-const stepDone = document.getElementById('step-done') as HTMLDivElement;
-const taskMetaInfo = document.getElementById('task-meta-info') as HTMLDivElement;
-const taskIdVal = document.getElementById('task-id-val') as HTMLSpanElement;
-const taskNodeVal = document.getElementById('task-node-val') as HTMLSpanElement;
-const taskTimeVal = document.getElementById('task-time-val') as HTMLSpanElement;
-
-// Helper to auto-resize textarea
 chatInput.addEventListener('input', () => {
   chatInput.style.height = 'auto';
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 120)}px`;
 });
 
-// Monitor Local Node Service status
-function updateNodeUI() {
-  const consentGranted = localStorage.getItem('flaxia_consent_granted') === 'true';
-  const nodeId = localStorage.getItem('flaxia_node_id');
-
-  if (consentGranted && nodeId) {
-    nodeDot.className = 'dot connected';
-    nodeStatusText.innerText = 'Connected to Network';
-    nodeIdVal.innerText = nodeId;
-    nodeIdVal.title = nodeId;
-    nodeActivityVal.innerText = 'Idle / Waiting';
-    consentTrigger.style.display = 'none';
-  } else {
-    nodeDot.className = 'dot disconnected';
-    nodeStatusText.innerText = 'Inactive';
-    nodeIdVal.innerText = '-';
-    nodeActivityVal.innerText = '-';
-    consentTrigger.style.display = 'block';
-  }
-}
-
-// WebGPU detection for optimal inference device
-async function detectBestDevice(): Promise<string> {
-  if ((navigator as any).gpu) {
-    try {
-      const adapter = await (navigator as any).gpu.requestAdapter();
-      if (adapter?.features.has('shader-f16')) return 'webgpu';
-    } catch {}
-  }
-  return 'wasm';
-}
-
-// Start Node Service on Consent Click
-consentTrigger.addEventListener('click', () => {
-  initFlaxiaNode({
-    orchestratorUrl,
-    siteId: 'darkshark-chat-example',
-    consent: {
-      brandName: 'DarkShark Node',
-      position: 'bottom-right',
-      accentColor: '#00f0ff'
-    }
-  });
-  
-  // Poll briefly for localstorage updates as consent might be granted
-  let attempts = 0;
-  const interval = setInterval(() => {
-    updateNodeUI();
-    attempts++;
-    if (attempts > 30 || localStorage.getItem('flaxia_node_id')) {
-      clearInterval(interval);
-    }
-  }, 1000);
-});
-
-// Conversation history for chat formatting
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -139,7 +45,6 @@ function buildChatPrompt(userMessage: string): string {
   return CHATML_TEMPLATE.replace('{{SYSTEM}}', SYSTEM_PROMPT).replace('{{HISTORY}}', historyStr);
 }
 
-// New Chat button
 const newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement | null;
 newChatBtn?.addEventListener('click', () => {
   conversationHistory = [];
@@ -148,31 +53,22 @@ newChatBtn?.addEventListener('click', () => {
   welcomeMsg.className = 'message system';
   welcomeMsg.innerHTML = '<div class="message-content">Welcome to <strong>DarkShark</strong>. Start a new conversation!</div>';
   chatMessages.appendChild(welcomeMsg);
-  closeSidebar();
 });
 
-// Sidebar toggle
-const sidebarToggle = document.getElementById('sidebar-toggle') as HTMLButtonElement | null;
-const sidebarClose = document.getElementById('sidebar-close') as HTMLButtonElement | null;
-const sidebar = document.getElementById('sidebar') as HTMLElement | null;
-const sidebarBackdrop = document.getElementById('sidebar-backdrop') as HTMLElement | null;
+const consentTrigger = document.getElementById('consent-trigger') as HTMLButtonElement;
 
-function openSidebar() {
-  sidebar?.classList.add('open');
-  sidebarBackdrop?.classList.add('open');
-}
-function closeSidebar() {
-  sidebar?.classList.remove('open');
-  sidebarBackdrop?.classList.remove('open');
-}
-sidebarToggle?.addEventListener('click', openSidebar);
-sidebarClose?.addEventListener('click', closeSidebar);
-sidebarBackdrop?.addEventListener('click', closeSidebar);
+consentTrigger.addEventListener('click', () => {
+  initFlaxiaNode({
+    orchestratorUrl,
+    siteId: 'darkshark-chat-example',
+    consent: {
+      brandName: 'DarkShark Node',
+      position: 'bottom-right',
+      accentColor: '#00f0ff'
+    }
+  });
+});
 
-// Initialize Node UI on Load
-updateNodeUI();
-
-// Auto-start node if already consented
 if (localStorage.getItem('flaxia_consent_granted') === 'true') {
   initFlaxiaNode({
     orchestratorUrl,
@@ -221,7 +117,6 @@ function renderContent(text: string, streaming: boolean): string {
   return before + thinkHtml + afterHtml;
 }
 
-// Render Chat Messages
 function appendMessage(sender: 'user' | 'assistant' | 'system', content: string): HTMLDivElement {
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
@@ -237,7 +132,6 @@ function appendMessage(sender: 'user' | 'assistant' | 'system', content: string)
   return messageDiv;
 }
 
-// Typing Effect for Assistant Reply
 async function typeReply(element: HTMLElement, text: string) {
   element.innerHTML = '';
   let currentText = '';
@@ -252,54 +146,14 @@ async function typeReply(element: HTMLElement, text: string) {
   element.innerHTML = renderContent(currentText, false);
 }
 
-// Task Visualization Helpers
-function resetVisualizer() {
-  stepPending.className = 'step';
-  stepProcessing.className = 'step';
-  stepDone.className = 'step';
-  taskMetaInfo.style.display = 'none';
-}
+function resetVisualizer() { }
+function updateVisualizer(status: 'pending' | 'processing' | 'done' | 'failed', taskId: string, nodeId = '-', elapsedSec = 0) { }
 
-function updateVisualizer(status: 'pending' | 'processing' | 'done' | 'failed', taskId: string, nodeId = '-', elapsedSec = 0) {
-  resetVisualizer();
-  taskMetaInfo.style.display = 'block';
-  taskIdVal.innerText = taskId;
-  taskNodeVal.innerText = nodeId;
-  taskTimeVal.innerText = `${elapsedSec.toFixed(1)}s`;
-
-  if (status === 'pending') {
-    stepPending.className = 'step active';
-  } else if (status === 'processing') {
-    stepPending.className = 'step complete';
-    stepProcessing.className = 'step active';
-    // Update local node activity text if this browser ran it
-    const localNodeId = localStorage.getItem('flaxia_node_id');
-    if (localNodeId && nodeId === localNodeId) {
-      nodeDot.className = 'dot busy';
-      nodeActivityVal.innerText = 'Processing AI Task';
-    }
-  } else if (status === 'done') {
-    stepPending.className = 'step complete';
-    stepProcessing.className = 'step complete';
-    stepDone.className = 'step active';
-    
-    // Restore node state to idle
-    updateNodeUI();
-  } else if (status === 'failed') {
-    stepPending.className = 'step';
-    stepProcessing.className = 'step';
-    stepDone.className = 'step';
-    updateNodeUI();
-  }
-}
-
-// Handle Form Submission
 chatInputForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const prompt = chatInput.value.trim();
   if (!prompt) return;
 
-  // UI state updates
   chatInput.value = '';
   chatInput.style.height = 'auto';
   chatInput.disabled = true;
@@ -313,12 +167,6 @@ chatInputForm.addEventListener('submit', async (e) => {
     resetVisualizer();
     updateVisualizer('pending', 'Submitting...');
 
-    // 1. Submit task to Worker Orchestrator via SDK Client
-    // Using onnx-community/Qwen3-0.6B-ONNX model with optimizations:
-    // - webgpu/wasm: auto-detect best available device
-    // - do_sample: false: greedy decoding (2-5x faster than sampling)
-    // - dtype: q4f16: 4-bit quantization
-    const device = await detectBestDevice();
     const chatPrompt = buildChatPrompt(prompt);
     const taskRecord = await client.submit({
       workload: 'ai-inference',
@@ -328,7 +176,7 @@ chatInputForm.addEventListener('submit', async (e) => {
         input: chatPrompt,
         options: {
           dtype: 'q4f16',
-          device,
+          device: 'wasm',
           max_new_tokens: 512,
           do_sample: false,
         } as any
@@ -347,7 +195,6 @@ chatInputForm.addEventListener('submit', async (e) => {
 
     let finalReply = '';
 
-    // 2a. Connect streaming WebSocket (primary)
     let streamWs: WebSocket | null = null;
     let replyMessage: HTMLDivElement | null = null;
     let wsActive = false;
@@ -392,7 +239,6 @@ chatInputForm.addEventListener('submit', async (e) => {
       console.log('[Stream] Could not connect, falling back to polling');
     }
 
-    // 2b. Poll orchestrator (fallback: only used when WS is unavailable)
     while (!isFinished) {
       await new Promise(r => setTimeout(r, wsActive ? 5000 : 1000));
 
@@ -404,7 +250,6 @@ chatInputForm.addEventListener('submit', async (e) => {
         streamWs?.close();
         updateVisualizer('failed', taskId);
         systemMsg.querySelector('.message-content')!.innerHTML = 'Task execution timed out after 90 seconds.';
-        updateNodeUI();
         break;
       }
 
@@ -415,9 +260,7 @@ chatInputForm.addEventListener('submit', async (e) => {
       if (currentTask.status === 'processing') {
         updateVisualizer('processing', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
         systemMsg.querySelector('.message-content')!.innerHTML = `Task assigned to node: <code style="font-family: monospace; background: rgba(0,240,255,0.05); color: #00f0ff; padding: 2px 4px; border-radius: 4px;">${currentTask.assignedNodeId}</code>. Generating response...`;
-      } 
-      
-      else if (currentTask.status === 'done') {
+      } else if (currentTask.status === 'done') {
         if (!streamedText) {
           isFinished = true;
           streamWs?.close();
@@ -452,20 +295,16 @@ chatInputForm.addEventListener('submit', async (e) => {
           if (contentEl) contentEl.innerHTML = renderContent(streamedText, false);
           updateVisualizer('done', taskId, currentTask.assignedNodeId || 'Assigned Node', elapsed);
         }
-      } 
-      
-      else if (currentTask.status === 'failed') {
+      } else if (currentTask.status === 'failed') {
         if (!streamedText) {
           isFinished = true;
           streamWs?.close();
           updateVisualizer('failed', taskId);
           systemMsg.querySelector('.message-content')!.innerHTML = `Task failed: <span style="color: #ff3366;">${currentTask.error || 'Unknown Error'}</span>`;
-          updateNodeUI();
         }
       }
     }
 
-    // Push to conversation history after completion
     if (finalReply) {
       conversationHistory.push({ role: 'assistant', content: finalReply });
     }
@@ -473,7 +312,6 @@ chatInputForm.addEventListener('submit', async (e) => {
   } catch (error: any) {
     systemMsg.querySelector('.message-content')!.innerHTML = `Submission error: <span style="color: #ff3366;">${error.message || error}</span>`;
     updateVisualizer('failed', 'Error');
-    updateNodeUI();
   } finally {
     chatInput.disabled = false;
     sendBtn.disabled = false;

@@ -1,23 +1,10 @@
-/**
- * Flaxia Worker - Orchestrator
- */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { crowdApp, validateApiKey } from './crowd'
-import { adminApp } from './admin'
-export { TaskQueue } from './worker/TaskQueue'
-export { NodeManager } from './worker/NodeManager'
-export { VectorIndex } from './worker/VectorIndex'
-export { ApiKeyManager } from './worker/ApiKeyManager'
+import { crowdApp } from './crowd'
 
 export interface Env {
-  TASK_QUEUE: DurableObjectNamespace
-  NODE_MANAGER: DurableObjectNamespace
-  VECTOR_INDEX: DurableObjectNamespace
-  API_KEY_MANAGER: DurableObjectNamespace
   API_KEYS: string
   CORS_ORIGINS: string
-  DO_SHARED_SECRET: string
   RATE_LIMIT_MAX: string
   MAX_PAYLOAD_SIZE: string
 }
@@ -42,15 +29,9 @@ const corsMiddleware = cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 })
 
-// Basic Routing
 app.get('/health', (c) => c.text('OK'))
 
-// Crowd Routing (CORS + 認証)
 app.use('/crowd/*', corsMiddleware)
 app.route('/crowd', crowdApp)
 
-// Admin Routing (管理画面 + API)
-app.route('/admin', adminApp)
-
 export default app
-

@@ -11,111 +11,14 @@
 </head>
 <body>
   <div id="app">
-    <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-header">
-        <div class="sidebar-logo">
-          <span class="logo-icon">▲</span>
-          <span class="logo-text">DarkShark</span>
-        </div>
-        <button id="new-chat-btn" class="new-chat-btn" title="New Chat">+</button>
-        <button id="sidebar-close" class="sidebar-close-btn">✕</button>
-      </div>
-
-      <div class="sidebar-body">
-        <!-- Node Status -->
-        <div class="sidebar-section">
-          <div class="section-label">Node</div>
-          <div class="node-card">
-            <div class="status-row">
-              <span class="dot disconnected" id="node-dot"></span>
-              <span class="status-text" id="node-status-text">Inactive</span>
-            </div>
-            <div class="info-row">
-              <span class="label">ID:</span>
-              <span class="value code" id="node-id-val">-</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Status:</span>
-              <span class="value" id="node-activity-val">-</span>
-            </div>
-            <button id="consent-trigger" class="sidebar-btn">Start Node Service</button>
-          </div>
-        </div>
-
-        <!-- Task Status -->
-        <div class="sidebar-section">
-          <div class="section-label">Active Task</div>
-          <div class="task-card">
-            <div class="timeline" id="task-timeline">
-              <div class="step" id="step-pending">
-                <span class="step-num">1</span>
-                <div class="step-info">
-                  <span class="step-title">Queueing</span>
-                  <span class="step-desc">Pending in queue</span>
-                </div>
-              </div>
-              <div class="step" id="step-processing">
-                <span class="step-num">2</span>
-                <div class="step-info">
-                  <span class="step-title">Processing</span>
-                  <span class="step-desc">Assigned to node</span>
-                </div>
-              </div>
-              <div class="step" id="step-done">
-                <span class="step-num">✓</span>
-                <div class="step-info">
-                  <span class="step-title">Completed</span>
-                  <span class="step-desc">Result returned</span>
-                </div>
-              </div>
-            </div>
-            <div class="task-meta" id="task-meta-info" style="display: none;">
-              <div class="info-row">
-                <span class="label">Task ID:</span>
-                <span class="value code" id="task-id-val">-</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Runner:</span>
-                <span class="value code" id="task-node-val">-</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Elapsed:</span>
-                <span class="value" id="task-time-val">-</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Settings -->
-        <div class="sidebar-section">
-          <div class="section-label">Settings</div>
-          <div class="settings-card">
-            <label class="settings-label">Orchestrator URL</label>
-            <input type="text" id="orchestrator-url-input" class="settings-input" placeholder="http://localhost:8787" />
-            <button id="save-settings-btn" class="sidebar-btn">Save & Reconnect</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <span class="footer-text">Flaxia Crowd v0.1</span>
-      </div>
-    </aside>
-
-    <!-- Backdrop for mobile -->
-    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
-
-    <!-- Main Content -->
     <main class="main-content">
-      <!-- Top bar -->
       <header class="top-bar">
-        <button id="sidebar-toggle" class="sidebar-toggle-btn">☰</button>
+        <button id="new-chat-btn" class="new-chat-btn" title="New Chat">+</button>
         <span class="model-name">Qwen 0.6B</span>
         <span class="model-badge">decentralized</span>
+        <button id="consent-trigger" class="node-toggle-btn" title="Start Node Service">⟐</button>
       </header>
 
-      <!-- Chat Messages -->
       <div id="chat-messages" class="chat-messages">
         <div class="message system">
           <div class="message-content">
@@ -125,7 +28,6 @@
         </div>
       </div>
 
-      <!-- Input Area -->
       <div class="input-container">
         <form id="chat-input-form" class="chat-input-form">
           <textarea id="chat-input" placeholder="Message DarkShark..." rows="1"></textarea>
