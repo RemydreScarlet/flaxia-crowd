@@ -5,7 +5,7 @@ export class WorkerPool {
   private defaultTimeoutMs: number;
   private workerUrl: string;
 
-  constructor(workerUrl?: string, timeoutMs = 120000) {
+  constructor(workerUrl?: string, timeoutMs = 300000) {
     this.workerUrl = workerUrl || '/worker.js';
     this.defaultTimeoutMs = timeoutMs;
     this.initWorker();
