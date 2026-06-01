@@ -20,5 +20,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
       - run: npm ci
-      - run: npm run build --workspaces
+      - run: npm run build --workspace=packages/sdk
+      - run: npm run build --workspace=packages/node
       - run: npm publish --workspace=packages/node --provenance
