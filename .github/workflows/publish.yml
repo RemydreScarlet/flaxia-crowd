@@ -34,9 +34,18 @@ jobs:
       - name: Build SDK
         run: npm run build --workspace=packages/sdk
 
+      - name: Debug auth config
+        run: |
+          echo "=== npmrc ==="
+          cat .npmrc 2>/dev/null || echo "no .npmrc"
+          echo "=== npm config ==="
+          npm config list
+          echo "=== env ==="
+          echo "NODE_AUTH_TOKEN is set: ${{ env.NODE_AUTH_TOKEN != '' }}"
+
       - name: Publish SDK
         if: startsWith(github.ref, 'refs/tags/sdk-v') || (github.event_name == 'workflow_dispatch' && inputs.package == 'sdk')
-        run: npm publish --workspace=packages/sdk --provenance
+        run: npm config delete //registry.npmjs.org/:_authToken && npm publish --workspace=packages/sdk --provenance
 
       - name: Build node
         if: startsWith(github.ref, 'refs/tags/node-v') || (github.event_name == 'workflow_dispatch' && inputs.package == 'node')
@@ -44,4 +53,4 @@ jobs:
 
       - name: Publish node
         if: startsWith(github.ref, 'refs/tags/node-v') || (github.event_name == 'workflow_dispatch' && inputs.package == 'node')
-        run: npm publish --workspace=packages/node --provenance
+        run: npm config delete //registry.npmjs.org/:_authToken && npm publish --workspace=packages/node --provenance
