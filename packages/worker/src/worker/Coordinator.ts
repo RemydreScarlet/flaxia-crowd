@@ -206,7 +206,7 @@ export class Coordinator extends DurableObject<Env> {
 
     const alarm = await this.ctx.storage.getAlarm();
     if (!alarm || alarm > Date.now() + body.timeoutMs) {
-      await this.ctx.storage.setAlarm(Date.now() + Math.min(body.timeoutMs, 30000));
+      await this.ctx.storage.setAlarm(Date.now() + (body.timeoutMs || 60000));
     }
 
     return Response.json({ message: "Task submitted", taskId: body.id });
@@ -229,6 +229,12 @@ export class Coordinator extends DurableObject<Env> {
     const msg = JSON.stringify({ type: "done", result });
     for (const ws of subs) {
       try { ws.send(msg); ws.close(); } catch {}
+    }
+
+    if (task.callbackUrl) {
+      this.deliverCallback(task.callbackUrl, {
+        taskId, status: 'done', result: task.result,
+      });
     }
   }
 
@@ -255,6 +261,25 @@ export class Coordinator extends DurableObject<Env> {
     const msg = JSON.stringify({ type: "error", error });
     for (const ws of subs) {
       try { ws.send(msg); ws.close(); } catch {}
+    }
+
+    if (task.callbackUrl) {
+      this.deliverCallback(task.callbackUrl, {
+        taskId, status: 'failed', error: task.error,
+      });
+    }
+  }
+
+  private async deliverCallback(url: string, body: Record<string, unknown>) {
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      // Callback failure is non-critical; task result remains available via REST API
     }
   }
 
@@ -329,7 +354,7 @@ export class Coordinator extends DurableObject<Env> {
 
     for (const taskId of processingIds) {
       const task = await this.ctx.storage.get<TaskRecord>(`task:${taskId}`);
-      if (task && task.assignedAt && now - task.assignedAt > (task.timeoutMs || 30000)) {
+      if (task && task.assignedAt && now - task.assignedAt > (task.timeoutMs || 600000)) {
         await this.failTask(taskId, "Task timed out");
       }
     }
