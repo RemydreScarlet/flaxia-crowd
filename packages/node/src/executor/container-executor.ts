@@ -65,7 +65,7 @@ export const runContainer = async (payload: ContainerPayload): Promise<Container
   
   // Map input files
   for (const [path, base64] of Object.entries(files)) {
-    const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const binary = Uint8Array.from(atob(base64 as string), c => c.charCodeAt(0));
     rootFiles.set(path, new File(binary));
   }
 
