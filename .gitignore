@@ -1,5 +1,18 @@
 # dependencies
 node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# ONNX output
+scripts/output/
+
+# HuggingFace cache
+.huggingface/
+
 .pnp
 .pnp.js
 
