@@ -14,9 +14,6 @@
     "@flaxia/node": "*"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
-    "vite": "^5.2.11",
-    "vitest": "^1.6.0",
-    "jsdom": "^24.0.0"
+    "vitest": "^4.1.6"
   }
 }
