@@ -72,11 +72,41 @@ export class FlaxiaClient {
 
   async waitForTask(taskId: string, intervalMs = 2000, timeoutMs = 60000): Promise<TaskRecord> {
     const start = Date.now();
+
+    const ws = await Promise.race([
+      this.subscribe(taskId).catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), intervalMs)),
+    ]);
+
+    if (ws) {
+      return await Promise.race([
+        this.pollUntilDone(taskId, intervalMs, timeoutMs, start),
+        new Promise<TaskRecord>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error('fallback'));
+          }, timeoutMs - (Date.now() - start));
+
+          const finish = async () => {
+            clearTimeout(timer);
+            ws.close();
+            try { resolve(await this.getTask(taskId)); } catch { reject(); }
+          };
+
+          ws.onDone(finish);
+          ws.onError(finish);
+        }),
+      ]);
+    }
+
+    return this.pollUntilDone(taskId, intervalMs, timeoutMs, start);
+  }
+
+  private async pollUntilDone(
+    taskId: string, intervalMs: number, timeoutMs: number, start: number
+  ): Promise<TaskRecord> {
     while (Date.now() - start < timeoutMs) {
       const task = await this.getTask(taskId);
-      if (task.status === 'done' || task.status === 'failed') {
-        return task;
-      }
+      if (task.status === 'done' || task.status === 'failed') return task;
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
     throw new FlaxiaError('Task polling timed out', 'POLLING_TIMEOUT', 408);
