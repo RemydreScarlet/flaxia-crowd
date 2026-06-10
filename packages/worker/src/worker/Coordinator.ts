@@ -359,18 +359,31 @@ export class Coordinator extends DurableObject<Env> {
       }
     }
 
+    // Send pings to all idle nodes to keep them alive
     const idleNodes = await this.getIdleNodes();
     for (const nodeId of idleNodes) {
       const node = await this.ctx.storage.get<NodeRecord>(`node:${nodeId}`);
-      if (node && now - node.lastPongAt > 60000) {
+      if (!node) continue;
+
+      if (now - node.lastPongAt > 60000) {
         await this.ctx.storage.delete(`node:${nodeId}`);
         await this.ctx.storage.put("nodes:idle", idleNodes.filter(id => id !== nodeId));
+        continue;
+      }
+
+      // Send ping to keep the node alive
+      const sockets = this.ctx.getWebSockets(nodeId);
+      for (const sock of sockets) {
+        try {
+          sock.send(JSON.stringify({ type: "ping" }));
+        } catch {}
       }
     }
 
     const pending = await this.getPending();
     const processing = await this.getProcessing();
-    if (pending.length > 0 || processing.length > 0) {
+    const remainingIdle = await this.getIdleNodes();
+    if (pending.length > 0 || processing.length > 0 || remainingIdle.length > 0) {
       await this.ctx.storage.setAlarm(Date.now() + 30000);
     }
   }

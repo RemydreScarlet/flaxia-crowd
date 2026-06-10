@@ -56,7 +56,7 @@ app.get('/signal', async (c) => {
   const origin = c.req.header('Origin')
   if (origin) {
     const allowed = (c.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
-    if (allowed.length > 0 && !allowed.includes(origin)) {
+    if (allowed.length > 0 && !allowed.some(a => origin === a || (a.startsWith('*.') && origin.endsWith(a.slice(1))))) {
       return c.text('Origin not allowed', 403)
     }
   }
@@ -80,7 +80,7 @@ app.get('/subscribe', async (c) => {
   const origin = c.req.header('Origin')
   if (origin) {
     const allowed = (c.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
-    if (allowed.length > 0 && !allowed.includes(origin)) {
+    if (allowed.length > 0 && !allowed.some(a => origin === a || (a.startsWith('*.') && origin.endsWith(a.slice(1))))) {
       return c.text('Origin not allowed', 403)
     }
   }
