@@ -4,7 +4,7 @@
 
 export type TaskStatus = 'pending' | 'assigning' | 'processing' | 'done' | 'failed';
 
-export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container' | 'vector-embed' | 'vector-store' | 'vector-query';
+export type WorkloadType = 'ai-inference' | 'image-process' | 'file-convert' | 'container' | 'vector-embed' | 'vector-store' | 'vector-query' | 'moe-inference';
 
 // --- AI Inference ---
 
@@ -54,6 +54,86 @@ export interface AiInferencePayload {
 
 export interface AiInferenceResult {
   output: unknown;
+}
+
+// --- MoE Inference ---
+
+export type MoENodeRole = 'coordinator' | 'expert';
+
+export type MoESessionState = 'allocating' | 'ready' | 'running' | 'cleanup' | 'failed';
+
+export interface MoEModelConfig {
+  modelId: string;
+  hiddenSize?: number;
+  numLayers?: number;
+  numAttentionHeads?: number;
+  numKeyValueHeads?: number;
+  headDim?: number;
+  vocabSize?: number;
+  numRoutedExperts?: number;
+  numSharedExperts?: number;
+  numExpertsPerToken?: number;
+  numHashLayers?: number;
+  moeIntermediateSize?: number;
+  maxNewTokens?: number;
+  doSample?: boolean;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  dtype?: 'bf16' | 'fp16' | 'fp32' | 'int8' | 'int4';
+  device?: 'wasm' | 'webgpu' | 'cpu';
+  coordinatorUrl?: string;
+  expertModelBaseUrl?: string;
+}
+
+export interface MoEExpertRequest {
+  layerIndex: number;
+  expertIds: number[];
+  hiddenStates: Array<ArrayBuffer | ArrayLike<number>>;
+  tokenCount: number;
+}
+
+export interface MoEExpertResponse {
+  expertId: number;
+  output: number[];
+  durationMs?: number;
+  error?: string;
+}
+
+export interface MoEInferencePayload {
+  input: string;
+  model: MoEModelConfig;
+  maxNewTokens?: number;
+  timeoutMs?: number;
+  useRelay?: boolean;
+  coordinatorId?: string;
+  expertIds?: number[];
+  progress?: boolean;
+}
+
+export interface MoEInferenceResult {
+  output: string;
+  tokens: string[];
+  durationMs: number;
+  expertResponses: MoEExpertResponse[];
+  config: MoEModelConfig;
+}
+
+export interface MoEProgressEvent {
+  type: 'progress';
+  taskId: string;
+  state: MoESessionState;
+  layerIndex?: number;
+  expertIds?: number[];
+  activeExperts?: number[];
+  latencyMs?: number;
+  message?: string;
+}
+
+export interface MoENodeConfig {
+  role?: MoENodeRole;
+  expertIds?: number[];
+  modelId?: string;
 }
 
 // --- Image Processing ---
@@ -170,7 +250,7 @@ export interface VectorQueryResult {
 
 // --- Core Task Types ---
 
-export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | VectorEmbedPayload | VectorStorePayload | VectorQueryPayload;
+export type TaskPayload = AiInferencePayload | ImageProcessPayload | FileConvertPayload | ContainerPayload | VectorEmbedPayload | VectorStorePayload | VectorQueryPayload | MoEInferencePayload;
 
 export interface TaskRecord {
   id: string;
@@ -181,6 +261,8 @@ export interface TaskRecord {
   assignedAt?: number;
   completedAt?: number;
   assignedNodeId?: string;
+  assignedCoordinatorNodeId?: string;
+  assignedExpertNodeIds?: string[];
   retryCount: number;
   timeoutMs: number;
   callbackUrl?: string;
@@ -200,4 +282,5 @@ export interface NodeConfig {
   };
   maxCpuLoad?: number;
   capabilities?: WorkloadType[];
+  moe?: MoENodeConfig;
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initFlaxiaNode } from '../SignalingClient';
 
 describe('SignalingClient', () => {
@@ -6,6 +6,10 @@ describe('SignalingClient', () => {
     document.body.innerHTML = '';
     localStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('should attempt to connect to the correct signaling URL after consent', () => {
@@ -71,5 +75,51 @@ describe('SignalingClient', () => {
     const nodeId = localStorage.getItem('flaxia_node_id');
     expect(nodeId).toBeDefined();
     expect(nodeId!.length).toBeGreaterThan(0);
+  });
+
+  it('should suspend WebSocket and terminate worker when tab becomes hidden', () => {
+    const mockClose = vi.fn();
+    const MockWebSocket = vi.fn().mockImplementation(function () {
+      return { close: mockClose, send: vi.fn() };
+    });
+    globalThis.WebSocket = MockWebSocket as any;
+    localStorage.setItem('flaxia_consent_granted', 'true');
+
+    initFlaxiaNode({
+      orchestratorUrl: 'https://flaxia.app',
+      siteId: 'test-site',
+      consent: { brandName: 'Test', position: 'bottom-right' },
+    });
+
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('should reconnect WebSocket when tab becomes visible after suspend', () => {
+    const MockWebSocket = vi.fn().mockImplementation(function () {
+      return { close: vi.fn(), send: vi.fn() };
+    });
+    globalThis.WebSocket = MockWebSocket as any;
+    localStorage.setItem('flaxia_consent_granted', 'true');
+
+    initFlaxiaNode({
+      orchestratorUrl: 'https://flaxia.app',
+      siteId: 'test-site',
+      consent: { brandName: 'Test', position: 'bottom-right' },
+    });
+
+    const afterInitCount = MockWebSocket.mock.calls.length;
+
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    const afterHideCount = MockWebSocket.mock.calls.length;
+
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(MockWebSocket.mock.calls.length).toBeGreaterThan(afterHideCount);
   });
 });

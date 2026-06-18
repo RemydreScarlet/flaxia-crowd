@@ -87,4 +87,10 @@ export class WorkerPool {
       this.worker = null;
     }
   }
+
+  resume() {
+    if (!this.worker) {
+      this.initWorker();
+    }
+  }
 }

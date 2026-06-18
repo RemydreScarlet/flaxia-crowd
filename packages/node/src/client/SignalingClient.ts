@@ -1,6 +1,7 @@
 import { ConsentUI } from '../consent/ConsentUI';
 import { hasConsent, saveConsent } from '../consent/storage';
 import { WorkerPool } from '../executor/WorkerPool';
+import { CpuThrottle } from '../executor/throttle';
 
 import type { NodeConfig, WorkloadType } from '@flaxia/sdk';
 
@@ -16,11 +17,14 @@ class SignalingClient {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_DELAY = 30000;
   private destroyed = false;
+  private suspended = false;
+  private visibilityHandler: (() => void) | null = null;
 
   constructor(
     private config: NodeConfig,
     private workerPool: WorkerPool,
-    private nodeId: string
+    private nodeId: string,
+    private throttle: CpuThrottle,
   ) {}
 
   connect() {
@@ -32,6 +36,8 @@ class SignalingClient {
       try { old.close(); } catch {}
       this.ws = null;
     }
+
+    this.setupVisibilityHandler();
 
     const capabilities: WorkloadType[] = this.config.capabilities ?? ['ai-inference', 'image-process'];
     const wsUrl = new URL(`${this.config.orchestratorUrl.replace('http', 'ws')}/crowd/signal`);
@@ -48,7 +54,7 @@ class SignalingClient {
     ws.onmessage = async (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong', cpuLoad: 0.1 }));
+        ws.send(JSON.stringify({ type: 'pong', cpuLoad: this.throttle.lastMeasuredLoad }));
         return;
       }
       if (data.type === 'task') {
@@ -72,12 +78,53 @@ class SignalingClient {
 
   disconnect() {
     this.destroyed = true;
+    this.suspended = false;
+    this.removeVisibilityHandler();
     try { this.ws?.close(); } catch {}
     this.ws = null;
   }
 
+  suspend() {
+    if (this.suspended || this.destroyed) return;
+    this.suspended = true;
+    if (this.ws) {
+      const old = this.ws;
+      old.onclose = null;
+      try { old.close(); } catch {}
+      this.ws = null;
+    }
+    this.workerPool.terminate();
+  }
+
+  resume() {
+    if (!this.suspended || this.destroyed) return;
+    this.suspended = false;
+    this.workerPool.resume();
+    this.connect();
+  }
+
+  private setupVisibilityHandler() {
+    this.removeVisibilityHandler();
+    this.visibilityHandler = () => {
+      if (document.hidden) {
+        this.suspend();
+      } else if (this.suspended) {
+        this.resume();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+  }
+
+  private removeVisibilityHandler() {
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
+  }
+
   private async handleTask(data: TaskMessage) {
     try {
+      await this.throttle.waitForSlot();
       const result = await this.workerPool.run(
         data.taskId, data.workload, data.payload,
         undefined,
@@ -104,6 +151,9 @@ const startNode = (config: NodeConfig) => {
     prev.disconnect();
   }
 
+  const throttle = new CpuThrottle(config.maxCpuLoad);
+  throttle.startMeasuring();
+
   const workerUrl = new URL('./worker.js', import.meta.url).href;
   const workerPool = new WorkerPool(workerUrl);
   let nodeId = localStorage.getItem('flaxia_node_id');
@@ -112,7 +162,7 @@ const startNode = (config: NodeConfig) => {
     localStorage.setItem('flaxia_node_id', nodeId);
   }
 
-  const client = new SignalingClient(config, workerPool, nodeId);
+  const client = new SignalingClient(config, workerPool, nodeId, throttle);
   (window as any)[WINDOW_KEY] = client;
   client.connect();
 };
